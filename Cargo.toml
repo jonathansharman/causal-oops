@@ -1,0 +1,8 @@
+[package]
+edition = "2021"
+name = "causal-oops"
+version = "0.1.0"
+
+[dependencies]
+bevy = "0.8.1"
+bevy_pixel_camera = "0.2.0"
