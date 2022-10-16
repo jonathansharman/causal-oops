@@ -1,12 +1,15 @@
 use bevy::prelude::*;
-use level::{Coords, Level, Object, Tile};
+use level::{Coords, Level, Object, Tile, ID};
 
+mod animation;
 mod history;
 mod level;
 
 fn main() {
 	App::new()
 		.add_startup_system(setup)
+		.add_system(control)
+		.add_system(animate)
 		.insert_resource(WindowDescriptor {
 			title: "Causal Oops".to_string(),
 			width: 800.0,
@@ -60,28 +63,29 @@ fn spawn_level(
 	}
 
 	// Spawn object entities.
-	for (coords, level_object) in level.objects() {
+	for level_object in level.iter_objects() {
+		let Coords { row, col } = level_object.coords;
 		match level_object.object {
-			Object::Character => commands.spawn_bundle(PbrBundle {
-				mesh: character_mesh.clone(),
-				material: character_material.clone(),
-				transform: Transform::from_xyz(
-					coords.col as f32,
-					0.5,
-					coords.row as f32,
-				),
-				..default()
-			}),
-			Object::Crate => commands.spawn_bundle(PbrBundle {
-				mesh: block_mesh.clone(),
-				material: crate_material.clone(),
-				transform: Transform::from_xyz(
-					coords.col as f32,
-					0.5,
-					coords.row as f32,
-				),
-				..default()
-			}),
+			Object::Character => commands
+				.spawn_bundle(PbrBundle {
+					mesh: character_mesh.clone(),
+					material: character_material.clone(),
+					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
+					..default()
+				})
+				.insert(animation::LevelObject {
+					id: level_object.id,
+				}),
+			Object::Crate => commands
+				.spawn_bundle(PbrBundle {
+					mesh: block_mesh.clone(),
+					material: crate_material.clone(),
+					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
+					..default()
+				})
+				.insert(animation::LevelObject {
+					id: level_object.id,
+				}),
 		};
 	}
 }
@@ -112,4 +116,47 @@ fn setup(
 			.looking_at(Vec3::new(2.0, 0.0, 2.0), Vec3::Y),
 		..default()
 	});
+}
+
+fn control(input: Res<Input<KeyCode>>, mut level: ResMut<Level>) {
+	let (mut d_row, mut d_col): (i8, i8) = (0, 0);
+	if input.just_pressed(KeyCode::Left) {
+		d_col -= 1;
+	}
+	if input.just_pressed(KeyCode::Right) {
+		d_col += 1;
+	}
+	if input.just_pressed(KeyCode::Up) {
+		d_row -= 1;
+	}
+	if input.just_pressed(KeyCode::Down) {
+		d_row += 1;
+	}
+
+	if d_col != 0 || d_row != 0 {
+		// TODO: This assumes there's always exactly one character, with ID 0.
+		let object = level.get_object_mut(&ID(0)).unwrap();
+		if d_row == -1 {
+			object.coords.row -= 1
+		} else if d_row == 1 {
+			object.coords.row += 1
+		}
+		if d_col == -1 {
+			object.coords.col -= 1
+		} else if d_col == 1 {
+			object.coords.col += 1
+		}
+	}
+}
+
+fn animate(
+	mut query: Query<(&animation::LevelObject, &mut Transform)>,
+	level: Res<Level>,
+) {
+	for (level_object, mut transform) in &mut query {
+		if let Some(level_object) = level.get_object(&level_object.id) {
+			let Coords { row, col } = level_object.coords;
+			*transform = Transform::from_xyz(col as f32, 0.5, row as f32)
+		}
+	}
 }

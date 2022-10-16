@@ -22,8 +22,8 @@ pub enum Tile {
 
 /// A character or portal identifier. Enables correlating characters with
 /// portals and character animations across frames.
-#[derive(Clone, Copy)]
-pub struct ID(u32);
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ID(pub u32);
 
 /// Something that can be moved around a level.
 #[derive(Clone, Copy)]
@@ -44,7 +44,8 @@ pub struct Level {
 	width: usize,
 	height: usize,
 	tiles: Vec<Tile>,
-	objects: HashMap<Coords, LevelObject>,
+	objects_by_id: HashMap<ID, LevelObject>,
+	object_ids_by_coords: HashMap<Coords, ID>,
 }
 
 impl Level {
@@ -60,8 +61,26 @@ impl Level {
 		self.tiles[coords.row * self.height + coords.col]
 	}
 
-	pub fn objects(&self) -> &HashMap<Coords, LevelObject> {
-		&self.objects
+	/// Iterates over all objects in the level.
+	pub fn iter_objects(&self) -> impl Iterator<Item = &LevelObject> {
+		self.objects_by_id.values()
+	}
+
+	/// Gets a reference to the object with the given ID, if it exists.
+	pub fn get_object(&self, id: &ID) -> Option<&LevelObject> {
+		self.objects_by_id.get(id)
+	}
+
+	/// Gets a mutable reference to the object with the given ID, if it exists.
+	pub fn get_object_mut(&mut self, id: &ID) -> Option<&mut LevelObject> {
+		self.objects_by_id.get_mut(id)
+	}
+
+	/// Adds `level_object` to the level.
+	fn add_object(&mut self, level_object: LevelObject) {
+		self.object_ids_by_coords
+			.insert(level_object.coords, level_object.id);
+		self.objects_by_id.insert(level_object.id, level_object);
 	}
 }
 
@@ -81,28 +100,22 @@ pub fn test_level() -> Level {
 			tiles.push(tile)
 		}
 	}
-	let objects = HashMap::from([
-		(
-			Coords::new(1, 1),
-			LevelObject {
-				id: ID(0),
-				object: Object::Character,
-				coords: Coords::new(1, 1),
-			},
-		),
-		(
-			Coords::new(3, 3),
-			LevelObject {
-				id: ID(1),
-				object: Object::Crate,
-				coords: Coords::new(3, 3),
-			},
-		),
-	]);
-	Level {
+	let mut level = Level {
 		width,
 		height,
 		tiles,
-		objects,
-	}
+		object_ids_by_coords: HashMap::new(),
+		objects_by_id: HashMap::new(),
+	};
+	level.add_object(LevelObject {
+		id: ID(0),
+		object: Object::Character,
+		coords: Coords::new(1, 1),
+	});
+	level.add_object(LevelObject {
+		id: ID(1),
+		object: Object::Crate,
+		coords: Coords::new(3, 3),
+	});
+	level
 }
