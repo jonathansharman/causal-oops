@@ -1,10 +1,10 @@
 use bevy::utils::HashMap;
 
 /// Row-column coordinates on a [`Level`] grid.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Coords {
-	row: usize,
-	col: usize,
+	pub row: usize,
+	pub col: usize,
 }
 
 impl Coords {
@@ -22,29 +22,29 @@ pub enum Tile {
 
 /// A character or portal identifier. Enables correlating characters with
 /// portals and character animations across frames.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 pub struct ID(u32);
 
 /// Something that can be moved around a level.
 #[derive(Clone, Copy)]
 pub enum Object {
-	Character { id: ID },
+	Character,
+	Crate,
 }
 
-/// A tile and the object on top of it, if any.
-#[derive(Clone, Copy)]
-pub struct Space {
-	pub tile: Tile,
-	pub object: Option<Object>,
+/// An [`Object`] along with data relating that object to a [`Level`].
+pub struct LevelObject {
+	pub id: ID,
+	pub object: Object,
+	pub coords: Coords,
 }
 
 /// The complete state of a level at a single point in time.
 pub struct Level {
 	width: usize,
 	height: usize,
-	spaces: Vec<Space>,
-	/// Allows O(1) position lookup by character ID.
-	character_coords: HashMap<ID, Coords>,
+	tiles: Vec<Tile>,
+	objects: HashMap<Coords, LevelObject>,
 }
 
 impl Level {
@@ -56,14 +56,18 @@ impl Level {
 		self.height
 	}
 
-	pub fn at(&self, coords: Coords) -> Space {
-		self.spaces[coords.row * self.height + coords.col]
+	pub fn tile(&self, coords: Coords) -> Tile {
+		self.tiles[coords.row * self.height + coords.col]
+	}
+
+	pub fn objects(&self) -> &HashMap<Coords, LevelObject> {
+		&self.objects
 	}
 }
 
 pub fn test_level() -> Level {
 	let (width, height) = (5, 5);
-	let mut spaces = Vec::with_capacity(width * height);
+	let mut tiles = Vec::with_capacity(width * height);
 	for row in 0..height {
 		for col in 0..width {
 			let tile = if row == 0
@@ -74,18 +78,31 @@ pub fn test_level() -> Level {
 			} else {
 				Tile::Floor
 			};
-			let object = if row == 1 && col == 1 {
-				Some(Object::Character { id: ID(0) })
-			} else {
-				None
-			};
-			spaces.push(Space { tile, object })
+			tiles.push(tile)
 		}
 	}
+	let objects = HashMap::from([
+		(
+			Coords::new(1, 1),
+			LevelObject {
+				id: ID(0),
+				object: Object::Character,
+				coords: Coords::new(1, 1),
+			},
+		),
+		(
+			Coords::new(3, 3),
+			LevelObject {
+				id: ID(1),
+				object: Object::Crate,
+				coords: Coords::new(3, 3),
+			},
+		),
+	]);
 	Level {
 		width,
 		height,
-		spaces,
-		character_coords: HashMap::from([(ID(0), Coords::new(1, 1))]),
+		tiles,
+		objects,
 	}
 }
