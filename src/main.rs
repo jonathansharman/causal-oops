@@ -1,15 +1,21 @@
-use bevy::prelude::*;
+use bevy::{prelude::*, utils::HashMap};
+use iyes_loopless::prelude::*;
+
+use history::{Change, Move};
 use level::{Coords, Level, Object, Tile, ID};
+use state::State;
 
 mod animation;
 mod history;
 mod level;
+mod state;
 
 fn main() {
 	App::new()
 		.add_startup_system(setup)
-		.add_system(control)
-		.add_system(animate)
+		.add_system(control.run_in_state(State::Control))
+		.add_system(animate.run_in_state(State::Animate))
+		.add_loopless_state(State::Control)
 		.insert_resource(WindowDescriptor {
 			title: "Causal Oops".to_string(),
 			width: 800.0,
@@ -73,7 +79,7 @@ fn spawn_level(
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				})
-				.insert(animation::LevelObject {
+				.insert(animation::Object {
 					id: level_object.id,
 				}),
 			Object::Crate => commands
@@ -83,7 +89,7 @@ fn spawn_level(
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				})
-				.insert(animation::LevelObject {
+				.insert(animation::Object {
 					id: level_object.id,
 				}),
 		};
@@ -95,9 +101,15 @@ fn setup(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+	// Create level.
 	let level = level::test_level();
 	spawn_level(&mut commands, &mut meshes, &mut materials, &level);
 	commands.insert_resource(level);
+
+	// Create an empty change.
+	commands.insert_resource(Change {
+		moves: HashMap::new(),
+	});
 
 	// Add lighting.
 	commands.spawn_bundle(PointLightBundle {
@@ -118,7 +130,12 @@ fn setup(
 	});
 }
 
-fn control(input: Res<Input<KeyCode>>, mut level: ResMut<Level>) {
+fn control(
+	mut commands: Commands,
+	input: Res<Input<KeyCode>>,
+	mut level: ResMut<Level>,
+	mut change: ResMut<Change>,
+) {
 	let (mut d_row, mut d_col): (i8, i8) = (0, 0);
 	if input.just_pressed(KeyCode::Left) {
 		d_col -= 1;
@@ -135,7 +152,9 @@ fn control(input: Res<Input<KeyCode>>, mut level: ResMut<Level>) {
 
 	if d_col != 0 || d_row != 0 {
 		// TODO: This assumes there's always exactly one character, with ID 0.
-		let object = level.get_object_mut(&ID(0)).unwrap();
+		let id = ID(0);
+		let object = level.get_object_mut(&id).unwrap();
+		let old_coords = object.coords;
 		if d_row == -1 {
 			object.coords.row -= 1
 		} else if d_row == 1 {
@@ -146,17 +165,29 @@ fn control(input: Res<Input<KeyCode>>, mut level: ResMut<Level>) {
 		} else if d_col == 1 {
 			object.coords.col += 1
 		}
+		change.moves.insert(
+			object.id,
+			Move {
+				from: old_coords,
+				to: object.coords,
+			},
+		);
+		commands.insert_resource(NextState(State::Animate));
 	}
 }
 
 fn animate(
-	mut query: Query<(&animation::LevelObject, &mut Transform)>,
-	level: Res<Level>,
+	mut commands: Commands,
+	mut query: Query<(&animation::Object, &mut Transform)>,
+	mut change: ResMut<Change>,
 ) {
-	for (level_object, mut transform) in &mut query {
-		if let Some(level_object) = level.get_object(&level_object.id) {
-			let Coords { row, col } = level_object.coords;
+	// Apply movements.
+	for (object, mut transform) in &mut query {
+		if let Some(mv) = change.moves.get(&object.id) {
+			let Coords { row, col } = mv.to;
 			*transform = Transform::from_xyz(col as f32, 0.5, row as f32)
 		}
 	}
+	change.moves.clear();
+	commands.insert_resource(NextState(State::Control));
 }

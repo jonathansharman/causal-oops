@@ -5,3 +5,4 @@ version = "0.1.0"
 
 [dependencies]
 bevy = "0.8.1"
+iyes_loopless = "0.7.1"
