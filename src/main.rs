@@ -1,4 +1,10 @@
+use std::time::Duration;
+
 use bevy::{prelude::*, utils::HashMap};
+use bevy_tweening::{
+	lens::TransformPositionLens, Animator, EaseFunction, Tween, TweeningPlugin,
+	TweeningType,
+};
 use iyes_loopless::prelude::*;
 
 use history::{Change, Move};
@@ -24,6 +30,7 @@ fn main() {
 		})
 		.insert_resource(ClearColor(Color::BLACK))
 		.add_plugins(DefaultPlugins)
+		.add_plugin(TweeningPlugin)
 		.run();
 }
 
@@ -178,14 +185,25 @@ fn control(
 
 fn animate(
 	mut commands: Commands,
-	mut query: Query<(&animation::Object, &mut Transform)>,
+	mut query: Query<(Entity, &animation::Object)>,
 	mut change: ResMut<Change>,
 ) {
 	// Apply movements.
-	for (object, mut transform) in &mut query {
+	for (entity, object) in &mut query {
 		if let Some(mv) = change.moves.get(&object.id) {
-			let Coords { row, col } = mv.to;
-			*transform = Transform::from_xyz(col as f32, 0.5, row as f32)
+			commands.entity(entity).insert(Animator::new(Tween::new(
+				EaseFunction::CubicInOut,
+				TweeningType::Once,
+				Duration::from_millis(250),
+				TransformPositionLens {
+					start: Vec3::new(
+						mv.from.col as f32,
+						0.5,
+						mv.from.row as f32,
+					),
+					end: Vec3::new(mv.to.col as f32, 0.5, mv.to.row as f32),
+				},
+			)));
 		}
 	}
 	change.moves.clear();
