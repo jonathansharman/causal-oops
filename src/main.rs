@@ -118,6 +118,8 @@ fn setup(
 		moves: HashMap::new(),
 	});
 
+	commands.insert_resource(BufferedInput::default());
+
 	// Add lighting.
 	commands.spawn_bundle(PointLightBundle {
 		point_light: PointLight {
@@ -137,41 +139,44 @@ fn setup(
 	});
 }
 
+#[derive(Default)]
+struct BufferedInput {
+	key_code: Option<KeyCode>,
+}
+
 fn control(
 	mut commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
 	mut change: ResMut<Change>,
+	mut buffered_input: ResMut<BufferedInput>,
+	mut animation_query: Query<(Entity, &animation::Object)>,
 ) {
-	let (mut d_row, mut d_col): (i8, i8) = (0, 0);
+	// TODO: This assumes there's always exactly one character, with ID 0.
+	let id = ID(0);
+	let object = level.get_object_mut(&id).unwrap();
+
 	if input.just_pressed(KeyCode::Left) {
-		d_col -= 1;
-	}
-	if input.just_pressed(KeyCode::Right) {
-		d_col += 1;
-	}
-	if input.just_pressed(KeyCode::Up) {
-		d_row -= 1;
-	}
-	if input.just_pressed(KeyCode::Down) {
-		d_row += 1;
+		buffered_input.key_code = Some(KeyCode::Left);
+	} else if input.just_pressed(KeyCode::Right) {
+		buffered_input.key_code = Some(KeyCode::Right);
+	} else if input.just_pressed(KeyCode::Up) {
+		buffered_input.key_code = Some(KeyCode::Up);
+	} else if input.just_pressed(KeyCode::Down) {
+		buffered_input.key_code = Some(KeyCode::Down);
 	}
 
-	if d_col != 0 || d_row != 0 {
-		// TODO: This assumes there's always exactly one character, with ID 0.
-		let id = ID(0);
-		let object = level.get_object_mut(&id).unwrap();
-		let old_coords = object.coords;
-		if d_row == -1 {
-			object.coords.row -= 1
-		} else if d_row == 1 {
-			object.coords.row += 1
-		}
-		if d_col == -1 {
-			object.coords.col -= 1
-		} else if d_col == 1 {
-			object.coords.col += 1
-		}
+	let old_coords = object.coords;
+	match buffered_input.key_code {
+		Some(KeyCode::Left) => object.coords.col -= 1,
+		Some(KeyCode::Right) => object.coords.col += 1,
+		Some(KeyCode::Up) => object.coords.row -= 1,
+		Some(KeyCode::Down) => object.coords.row += 1,
+		_ => (),
+	};
+	buffered_input.key_code = None;
+
+	if object.coords != old_coords {
 		change.moves.insert(
 			object.id,
 			Move {
@@ -179,22 +184,24 @@ fn control(
 				to: object.coords,
 			},
 		);
-		commands.insert_resource(NextState(State::Animate));
+		start_animation(commands, change, animation_query);
 	}
 }
 
-fn animate(
+const ANIMATION_DURATION: Duration = Duration::from_millis(200);
+
+fn start_animation(
 	mut commands: Commands,
-	mut query: Query<(Entity, &animation::Object)>,
 	mut change: ResMut<Change>,
+	mut animation_query: Query<(Entity, &animation::Object)>,
 ) {
 	// Apply movements.
-	for (entity, object) in &mut query {
+	for (entity, object) in &mut animation_query {
 		if let Some(mv) = change.moves.get(&object.id) {
 			commands.entity(entity).insert(Animator::new(Tween::new(
 				EaseFunction::CubicInOut,
 				TweeningType::Once,
-				Duration::from_millis(250),
+				ANIMATION_DURATION,
 				TransformPositionLens {
 					start: Vec3::new(
 						mv.from.col as f32,
@@ -207,5 +214,30 @@ fn animate(
 		}
 	}
 	change.moves.clear();
-	commands.insert_resource(NextState(State::Control));
+	commands.insert_resource(Timer::new(ANIMATION_DURATION, false));
+	commands.insert_resource(NextState(State::Animate));
+}
+
+fn animate(
+	mut commands: Commands,
+	time: Res<Time>,
+	mut timer: ResMut<Timer>,
+	input: Res<Input<KeyCode>>,
+	mut buffered_input: ResMut<BufferedInput>,
+) {
+	// Do timing.
+	timer.tick(time.delta());
+	if timer.finished() {
+		commands.insert_resource(NextState(State::Control));
+	}
+	// Buffer input.
+	if input.just_pressed(KeyCode::Left) {
+		buffered_input.key_code = Some(KeyCode::Left);
+	} else if input.just_pressed(KeyCode::Right) {
+		buffered_input.key_code = Some(KeyCode::Right);
+	} else if input.just_pressed(KeyCode::Up) {
+		buffered_input.key_code = Some(KeyCode::Up);
+	} else if input.just_pressed(KeyCode::Down) {
+		buffered_input.key_code = Some(KeyCode::Down);
+	}
 }
