@@ -145,12 +145,12 @@ struct BufferedInput {
 }
 
 fn control(
-	mut commands: Commands,
+	commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
 	mut change: ResMut<Change>,
 	mut buffered_input: ResMut<BufferedInput>,
-	mut animation_query: Query<(Entity, &animation::Object)>,
+	animation_query: Query<(Entity, &animation::Object)>,
 ) {
 	// TODO: This assumes there's always exactly one character, with ID 0.
 	let id = ID(0);
@@ -166,24 +166,22 @@ fn control(
 		buffered_input.key_code = Some(KeyCode::Down);
 	}
 
-	let old_coords = object.coords;
+	let from = object.coords;
+	let mut to = from;
 	match buffered_input.key_code {
-		Some(KeyCode::Left) => object.coords.col -= 1,
-		Some(KeyCode::Right) => object.coords.col += 1,
-		Some(KeyCode::Up) => object.coords.row -= 1,
-		Some(KeyCode::Down) => object.coords.row += 1,
+		Some(KeyCode::Left) => to.col -= 1,
+		Some(KeyCode::Right) => to.col += 1,
+		Some(KeyCode::Up) => to.row -= 1,
+		Some(KeyCode::Down) => to.row += 1,
 		_ => (),
 	};
 	buffered_input.key_code = None;
 
-	if object.coords != old_coords {
-		change.moves.insert(
-			object.id,
-			Move {
-				from: old_coords,
-				to: object.coords,
-			},
-		);
+	if from != to {
+		*change = Change {
+			moves: HashMap::from([(id, Move { from, to })]),
+		};
+		change.apply(level.as_mut());
 		start_animation(commands, change, animation_query);
 	}
 }

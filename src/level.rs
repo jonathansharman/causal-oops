@@ -82,6 +82,15 @@ impl Level {
 			.insert(level_object.coords, level_object.id);
 		self.objects_by_id.insert(level_object.id, level_object);
 	}
+
+	/// Moves the object with the given ID from `from` to `to`.
+	pub fn move_object(&mut self, id: &ID, from: Coords, to: Coords) {
+		if let Some(level_object) = self.objects_by_id.get_mut(id) {
+			self.object_ids_by_coords.remove(&from);
+			self.object_ids_by_coords.insert(to, *id);
+			level_object.coords = to;
+		}
+	}
 }
 
 pub fn test_level() -> Level {
