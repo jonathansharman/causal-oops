@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use bevy::utils::HashMap;
 
 use crate::action::{Action, CharacterAction};
@@ -78,7 +80,9 @@ pub struct Level {
 	tiles: Vec<Tile>,
 	objects_by_id: HashMap<ID, LevelObject>,
 	object_ids_by_coords: HashMap<Coords, ID>,
-	history: History,
+	/// History of the level's state, for seeking backward and forward in time.
+	history: Vec<BiChange>,
+	turn: usize,
 }
 
 impl Level {
@@ -104,7 +108,10 @@ impl Level {
 
 	/// Updates the level using the given `actions` and returns the resulting
 	/// (possibly trivial) [`Change`].
-	pub fn update(&mut self, character_actions: &[CharacterAction]) -> Change {
+	pub fn update(
+		&mut self,
+		character_actions: &[CharacterAction],
+	) -> Arc<Change> {
 		let mut change = Change {
 			moves: HashMap::new(),
 		};
@@ -115,23 +122,26 @@ impl Level {
 				}
 			}
 		}
+		let reverse = Arc::new(change.reversed());
+		let change = Arc::new(change);
 		// Truncate history to remove any future states. This is a no-op if the
 		// level is already at the end of its history.
-		self.history.changes.truncate(self.history.index);
-		self.history.changes.push(change.clone());
-		self.history.index += 1;
+		self.history.truncate(self.turn);
+		self.history.push(BiChange {
+			forward: change.clone(),
+			reverse,
+		});
+		self.turn += 1;
 		change
 	}
 
 	/// If possible, moves to the previous level state and returns the applied
 	/// [`Change`].
-	pub fn undo(&mut self) -> Option<Change> {
-		if self.history.index > 0 {
-			let change = self.history.changes[self.history.index - 1]
-				.clone()
-				.reversed();
+	pub fn undo(&mut self) -> Option<Arc<Change>> {
+		if self.turn > 0 {
+			let change = self.history[self.turn - 1].reverse.clone();
 			self.apply(&change);
-			self.history.index -= 1;
+			self.turn -= 1;
 			Some(change)
 		} else {
 			None
@@ -140,11 +150,11 @@ impl Level {
 
 	/// If possible, moves to the next level state and returns the applied
 	/// [`Change`].
-	pub fn redo(&mut self) -> Option<Change> {
-		if self.history.index < self.history.changes.len() {
-			let change = self.history.changes[self.history.index].clone();
+	pub fn redo(&mut self) -> Option<Arc<Change>> {
+		if self.turn < self.history.len() {
+			let change = self.history[self.turn].forward.clone();
 			self.apply(&change);
-			self.history.index += 1;
+			self.turn += 1;
 			Some(change)
 		} else {
 			None
@@ -221,20 +231,22 @@ pub struct Change {
 	pub moves: HashMap<ID, Move>,
 }
 
-impl Change {
-	fn reversed(mut self) -> Change {
-		for mv in self.moves.values_mut() {
-			*mv = mv.reversed();
-		}
-		self
-	}
+/// A bidirectional change, i.e. a pair inverse changes.
+struct BiChange {
+	forward: Arc<Change>,
+	reverse: Arc<Change>,
 }
 
-/// A linear history of [`Change`] sets, to allow seeking backward and forward
-/// in time.
-struct History {
-	changes: Vec<Change>,
-	index: usize,
+impl Change {
+	fn reversed(&self) -> Change {
+		Change {
+			moves: self
+				.moves
+				.iter()
+				.map(|(id, mv)| (*id, mv.reversed()))
+				.collect(),
+		}
+	}
 }
 
 pub fn test_level() -> Level {
@@ -259,10 +271,8 @@ pub fn test_level() -> Level {
 		tiles,
 		object_ids_by_coords: HashMap::new(),
 		objects_by_id: HashMap::new(),
-		history: History {
-			changes: Vec::new(),
-			index: 0,
-		},
+		history: Vec::new(),
+		turn: 0,
 	};
 	level.add_object(LevelObject {
 		id: ID(0),
