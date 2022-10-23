@@ -7,12 +7,12 @@ use bevy_tweening::{
 };
 use iyes_loopless::prelude::*;
 
-use history::{Change, Move};
-use level::{Coords, Level, Object, Tile, ID};
+use action::{Action, CharacterAction};
+use level::{Change, Coords, Direction, Level, Object, Tile, ID};
 use state::State;
 
+mod action;
 mod animation;
-mod history;
 mod level;
 mod state;
 
@@ -118,8 +118,6 @@ fn setup(
 		moves: HashMap::new(),
 	});
 
-	commands.insert_resource(BufferedInput::default());
-
 	// Add lighting.
 	commands.spawn_bundle(PointLightBundle {
 		point_light: PointLight {
@@ -139,50 +137,42 @@ fn setup(
 	});
 }
 
-#[derive(Default)]
-struct BufferedInput {
-	key_code: Option<KeyCode>,
-}
-
 fn control(
 	commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
-	mut change: ResMut<Change>,
-	mut buffered_input: ResMut<BufferedInput>,
 	animation_query: Query<(Entity, &animation::Object)>,
 ) {
-	// TODO: This assumes there's always exactly one character, with ID 0.
-	let id = ID(0);
-	let object = level.get_object_mut(&id).unwrap();
-
-	if input.just_pressed(KeyCode::Left) {
-		buffered_input.key_code = Some(KeyCode::Left);
-	} else if input.just_pressed(KeyCode::Right) {
-		buffered_input.key_code = Some(KeyCode::Right);
-	} else if input.just_pressed(KeyCode::Up) {
-		buffered_input.key_code = Some(KeyCode::Up);
-	} else if input.just_pressed(KeyCode::Down) {
-		buffered_input.key_code = Some(KeyCode::Down);
+	if input.just_pressed(KeyCode::Z) {
+		if let Some(change) = level.undo() {
+			start_animation(commands, &change, animation_query);
+			return;
+		}
+	}
+	if input.just_pressed(KeyCode::X) {
+		if let Some(change) = level.redo() {
+			start_animation(commands, &change, animation_query);
+			return;
+		}
 	}
 
-	let from = object.coords;
-	let mut to = from;
-	match buffered_input.key_code {
-		Some(KeyCode::Left) => to.col -= 1,
-		Some(KeyCode::Right) => to.col += 1,
-		Some(KeyCode::Up) => to.row -= 1,
-		Some(KeyCode::Down) => to.row += 1,
-		_ => (),
+	let action = if input.just_pressed(KeyCode::Left) {
+		Some(Action::Push(Direction::Left))
+	} else if input.just_pressed(KeyCode::Right) {
+		Some(Action::Push(Direction::Right))
+	} else if input.just_pressed(KeyCode::Up) {
+		Some(Action::Push(Direction::Up))
+	} else if input.just_pressed(KeyCode::Down) {
+		Some(Action::Push(Direction::Down))
+	} else {
+		None
 	};
-	buffered_input.key_code = None;
 
-	if from != to {
-		*change = Change {
-			moves: HashMap::from([(id, Move { from, to })]),
-		};
-		change.apply(level.as_mut());
-		start_animation(commands, change, animation_query);
+	if let Some(action) = action {
+		// TODO: This assumes there's always exactly one character, with ID 0.
+		let id = ID(0);
+		let change = level.update(&[CharacterAction { id, action }]);
+		start_animation(commands, &change, animation_query);
 	}
 }
 
@@ -190,7 +180,7 @@ const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
 fn start_animation(
 	mut commands: Commands,
-	mut change: ResMut<Change>,
+	change: &Change,
 	mut animation_query: Query<(Entity, &animation::Object)>,
 ) {
 	// Apply movements.
@@ -211,31 +201,13 @@ fn start_animation(
 			)));
 		}
 	}
-	change.moves.clear();
 	commands.insert_resource(Timer::new(ANIMATION_DURATION, false));
 	commands.insert_resource(NextState(State::Animate));
 }
 
-fn animate(
-	mut commands: Commands,
-	time: Res<Time>,
-	mut timer: ResMut<Timer>,
-	input: Res<Input<KeyCode>>,
-	mut buffered_input: ResMut<BufferedInput>,
-) {
-	// Do timing.
+fn animate(mut commands: Commands, time: Res<Time>, mut timer: ResMut<Timer>) {
 	timer.tick(time.delta());
 	if timer.finished() {
 		commands.insert_resource(NextState(State::Control));
-	}
-	// Buffer input.
-	if input.just_pressed(KeyCode::Left) {
-		buffered_input.key_code = Some(KeyCode::Left);
-	} else if input.just_pressed(KeyCode::Right) {
-		buffered_input.key_code = Some(KeyCode::Right);
-	} else if input.just_pressed(KeyCode::Up) {
-		buffered_input.key_code = Some(KeyCode::Up);
-	} else if input.just_pressed(KeyCode::Down) {
-		buffered_input.key_code = Some(KeyCode::Down);
 	}
 }
