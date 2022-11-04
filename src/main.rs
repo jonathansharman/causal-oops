@@ -185,21 +185,16 @@ fn start_animation(
 ) {
 	// Apply movements.
 	for (entity, object) in &mut animation_query {
-		if let Some(mv) = change.moves.get(&object.id) {
-			commands.entity(entity).insert(Animator::new(Tween::new(
-				EaseFunction::CubicInOut,
-				TweeningType::Once,
-				ANIMATION_DURATION,
-				TransformPositionLens {
-					start: Vec3::new(
-						mv.from.col as f32,
-						0.5,
-						mv.from.row as f32,
-					),
-					end: Vec3::new(mv.to.col as f32, 0.5, mv.to.row as f32),
-				},
-			)));
-		}
+		let Some(mv) = change.moves.get(&object.id) else { continue };
+		commands.entity(entity).insert(Animator::new(Tween::new(
+			EaseFunction::CubicInOut,
+			TweeningType::Once,
+			ANIMATION_DURATION,
+			TransformPositionLens {
+				start: Vec3::new(mv.from.col as f32, 0.5, mv.from.row as f32),
+				end: Vec3::new(mv.to.col as f32, 0.5, mv.to.row as f32),
+			},
+		)));
 	}
 	commands.insert_resource(Timer::new(ANIMATION_DURATION, false));
 	commands.insert_resource(NextState(State::Animate));
