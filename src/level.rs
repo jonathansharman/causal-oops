@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use bevy::utils::HashMap;
 
-use crate::action::{Action, CharacterAction};
+use crate::action::{Action, PendingActions};
 
 #[derive(Clone, Copy)]
 pub enum Direction {
@@ -80,6 +80,7 @@ pub struct Level {
 	tiles: Vec<Tile>,
 	objects_by_id: HashMap<ID, LevelObject>,
 	object_ids_by_coords: HashMap<Coords, ID>,
+	character_ids: Vec<ID>,
 	/// History of the level's state, for seeking backward and forward in time.
 	history: Vec<BiChange>,
 	turn: usize,
@@ -106,17 +107,20 @@ impl Level {
 		self.objects_by_id.values()
 	}
 
-	/// Updates the level using the given `actions` and returns the resulting
-	/// (possibly trivial) [`Change`].
-	pub fn update(
-		&mut self,
-		character_actions: &[CharacterAction],
-	) -> Arc<Change> {
+	/// IDs of characters in this level, in order of appearance.
+	pub fn character_ids(&self) -> &[ID] {
+		&self.character_ids
+	}
+
+	/// Updates the level by executing the given `pending_actions`, returning
+	/// the resulting (possibly trivial) [`Change`].
+	pub fn update(&mut self, pending_actions: &PendingActions) -> Arc<Change> {
 		let mut change = Change {
 			moves: HashMap::new(),
 		};
-		for CharacterAction { id, action } in character_actions {
+		for (id, action) in pending_actions.iter() {
 			match action {
+				Action::Wait => (),
 				Action::Push(direction) => {
 					change.moves.insert(*id, self.push_object(id, *direction));
 				}
@@ -192,6 +196,9 @@ impl Level {
 	fn add_object(&mut self, level_object: LevelObject) {
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
+		if let Object::Character = level_object.object {
+			self.character_ids.push(level_object.id);
+		}
 		self.objects_by_id.insert(level_object.id, level_object);
 	}
 
@@ -273,6 +280,7 @@ pub fn test_level() -> Level {
 		objects_by_id: HashMap::new(),
 		history: Vec::new(),
 		turn: 0,
+		character_ids: Vec::new(),
 	};
 	level.add_object(LevelObject {
 		id: ID(0),
@@ -283,6 +291,11 @@ pub fn test_level() -> Level {
 		id: ID(1),
 		object: Object::Crate,
 		coords: Coords::new(3, 3),
+	});
+	level.add_object(LevelObject {
+		id: ID(2),
+		object: Object::Character,
+		coords: Coords::new(1, 3),
 	});
 	level
 }

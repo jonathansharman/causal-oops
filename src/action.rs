@@ -1,13 +1,19 @@
-use crate::level::{Direction, ID};
+use bevy::{prelude::*, utils::HashMap};
 
-/// An [`Action`] performed by a character.
-pub struct CharacterAction {
-	pub id: ID,
-	pub action: Action,
-}
+use crate::level::{Direction, ID};
 
 /// An action that can be performed by a character.
 pub enum Action {
-	/// Moving or pushing in some direction.
+	Wait,
 	Push(Direction),
+}
+
+/// The actions to be performed in a turn, by character ID.
+#[derive(Deref, DerefMut)]
+pub struct PendingActions(HashMap<ID, Action>);
+
+impl PendingActions {
+	pub fn new() -> Self {
+		Self(HashMap::new())
+	}
 }

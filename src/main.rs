@@ -7,8 +7,8 @@ use bevy_tweening::{
 };
 use iyes_loopless::prelude::*;
 
-use action::{Action, CharacterAction};
-use level::{Change, Coords, Direction, Level, Object, Tile, ID};
+use action::{Action, PendingActions};
+use level::{Change, Coords, Direction, Level, Object, Tile};
 use state::State;
 
 mod action;
@@ -113,6 +113,8 @@ fn setup(
 	spawn_level(&mut commands, &mut meshes, &mut materials, &level);
 	commands.insert_resource(level);
 
+	commands.insert_resource(PendingActions::new());
+
 	// Create an empty change.
 	commands.insert_resource(Change {
 		moves: HashMap::new(),
@@ -141,6 +143,7 @@ fn control(
 	commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
+	mut pending_actions: ResMut<PendingActions>,
 	animation_query: Query<(Entity, &animation::Object)>,
 ) {
 	if input.just_pressed(KeyCode::Z) {
@@ -156,7 +159,9 @@ fn control(
 		}
 	}
 
-	let action = if input.just_pressed(KeyCode::Left) {
+	let action = if input.just_pressed(KeyCode::Space) {
+		Some(Action::Wait)
+	} else if input.just_pressed(KeyCode::Left) {
 		Some(Action::Push(Direction::Left))
 	} else if input.just_pressed(KeyCode::Right) {
 		Some(Action::Push(Direction::Right))
@@ -169,10 +174,15 @@ fn control(
 	};
 
 	if let Some(action) = action {
-		// TODO: This assumes there's always exactly one character, with ID 0.
-		let id = ID(0);
-		let change = level.update(&[CharacterAction { id, action }]);
-		start_animation(commands, &change, animation_query);
+		if let Some(id) = level.character_ids().get(pending_actions.len()) {
+			pending_actions.insert(*id, action);
+			if pending_actions.len() == level.character_ids().len() {
+				// All characters have been assigned moves. Execute turn.
+				let change = level.update(&pending_actions);
+				pending_actions.clear();
+				start_animation(commands, &change, animation_query);
+			}
+		}
 	}
 }
 
