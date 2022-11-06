@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::prelude::*;
 use bevy_tweening::{
 	lens::TransformPositionLens, Animator, EaseFunction, Tween, TweeningPlugin,
 	TweeningType,
@@ -9,11 +9,15 @@ use iyes_loopless::prelude::*;
 
 use action::{Action, PendingActions};
 use level::{Change, Coords, Direction, Level, Object, Tile};
+use material::Materials;
+use mesh::Meshes;
 use state::State;
 
 mod action;
 mod animation;
 mod level;
+mod material;
+mod mesh;
 mod state;
 
 fn main() {
@@ -36,38 +40,25 @@ fn main() {
 
 fn spawn_level(
 	commands: &mut Commands,
-	meshes: &mut Assets<Mesh>,
-	materials: &mut Assets<StandardMaterial>,
+	meshes: &Meshes,
+	materials: &Materials,
 	level: &Level,
 ) {
-	// Create meshes.
-	let character_mesh = meshes.add(Mesh::from(shape::Icosphere {
-		radius: 0.5,
-		subdivisions: 3,
-	}));
-	let block_mesh = meshes.add(Mesh::from(shape::Cube { size: 1.0 }));
-
-	// Create materials.
-	let character_material = materials.add(Color::rgb(0.2, 0.7, 0.2).into());
-	let crate_material = materials.add(Color::rgb(0.8, 0.6, 0.4).into());
-	let floor_material = materials.add(Color::rgb(0.5, 0.4, 0.3).into());
-	let wall_material = materials.add(Color::rgb(0.5, 0.1, 0.1).into());
-
 	// Spawn tile entities.
 	for row in 0..level.height() {
 		for col in 0..level.width() {
 			match level.tile(Coords::new(row, col)) {
 				Tile::Floor => commands.spawn_bundle(PbrBundle {
-					mesh: block_mesh.clone(),
-					material: floor_material.clone(),
+					mesh: meshes.block.clone(),
+					material: materials.floor.clone(),
 					transform: Transform::from_xyz(
 						col as f32, -0.5, row as f32,
 					),
 					..default()
 				}),
 				Tile::Wall => commands.spawn_bundle(PbrBundle {
-					mesh: block_mesh.clone(),
-					material: wall_material.clone(),
+					mesh: meshes.block.clone(),
+					material: materials.wall.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				}),
@@ -81,8 +72,8 @@ fn spawn_level(
 		match level_object.object {
 			Object::Character => commands
 				.spawn_bundle(PbrBundle {
-					mesh: character_mesh.clone(),
-					material: character_material.clone(),
+					mesh: meshes.character.clone(),
+					material: materials.character.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				})
@@ -91,8 +82,8 @@ fn spawn_level(
 				}),
 			Object::Crate => commands
 				.spawn_bundle(PbrBundle {
-					mesh: block_mesh.clone(),
-					material: crate_material.clone(),
+					mesh: meshes.block.clone(),
+					material: materials.wood.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				})
@@ -105,20 +96,23 @@ fn spawn_level(
 
 fn setup(
 	mut commands: Commands,
-	mut meshes: ResMut<Assets<Mesh>>,
-	mut materials: ResMut<Assets<StandardMaterial>>,
+	mut mesh_assets: ResMut<Assets<Mesh>>,
+	mut material_assets: ResMut<Assets<StandardMaterial>>,
 ) {
+	// Load meshes and materials.
+	let meshes = Meshes::load(&mut mesh_assets);
+	let materials = Materials::load(&mut material_assets);
+
 	// Create level.
 	let level = level::test_level();
-	spawn_level(&mut commands, &mut meshes, &mut materials, &level);
+	spawn_level(&mut commands, &meshes, &materials, &level);
 	commands.insert_resource(level);
 
-	commands.insert_resource(PendingActions::new());
+	// Insert mesh and material resources.
+	commands.insert_resource(meshes);
+	commands.insert_resource(materials);
 
-	// Create an empty change.
-	commands.insert_resource(Change {
-		moves: HashMap::new(),
-	});
+	commands.insert_resource(PendingActions::new());
 
 	// Add lighting.
 	commands.spawn_bundle(PointLightBundle {
