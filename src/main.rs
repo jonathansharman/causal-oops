@@ -3,15 +3,13 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy_tweening::{
 	lens::TransformPositionLens, Animator, EaseFunction, Tween, TweeningPlugin,
-	TweeningType,
 };
-use iyes_loopless::prelude::*;
 
 use action::{Action, PendingActions};
 use level::{Change, Coords, Direction, Level, Object, Tile};
 use material::Materials;
 use mesh::Meshes;
-use state::State;
+use state::GameState;
 
 mod action;
 mod animation;
@@ -23,17 +21,23 @@ mod state;
 fn main() {
 	App::new()
 		.add_startup_system(setup)
-		.add_system(control.run_in_state(State::Control))
-		.add_system(animate.run_in_state(State::Animate))
-		.add_loopless_state(State::Control)
-		.insert_resource(WindowDescriptor {
-			title: "Causal Oops".to_string(),
-			width: 800.0,
-			height: 600.0,
-			..Default::default()
-		})
+		.add_state(GameState::Control)
+		.add_system_set(
+			SystemSet::on_update(GameState::Control).with_system(control),
+		)
+		.add_system_set(
+			SystemSet::on_update(GameState::Animate).with_system(animate),
+		)
 		.insert_resource(ClearColor(Color::BLACK))
-		.add_plugins(DefaultPlugins)
+		.add_plugins(DefaultPlugins.set(WindowPlugin {
+			window: WindowDescriptor {
+				title: "Causal Oops".to_string(),
+				width: 800.0,
+				height: 600.0,
+				..default()
+			},
+			..default()
+		}))
 		.add_plugin(TweeningPlugin)
 		.run();
 }
@@ -48,7 +52,7 @@ fn spawn_level(
 	for row in 0..level.height() {
 		for col in 0..level.width() {
 			match level.tile(Coords::new(row, col)) {
-				Tile::Floor => commands.spawn_bundle(PbrBundle {
+				Tile::Floor => commands.spawn(PbrBundle {
 					mesh: meshes.block.clone(),
 					material: materials.floor.clone(),
 					transform: Transform::from_xyz(
@@ -56,7 +60,7 @@ fn spawn_level(
 					),
 					..default()
 				}),
-				Tile::Wall => commands.spawn_bundle(PbrBundle {
+				Tile::Wall => commands.spawn(PbrBundle {
 					mesh: meshes.block.clone(),
 					material: materials.wall.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
@@ -70,26 +74,28 @@ fn spawn_level(
 	for level_object in level.iter_objects() {
 		let Coords { row, col } = level_object.coords;
 		match level_object.object {
-			Object::Character => commands
-				.spawn_bundle(PbrBundle {
+			Object::Character => commands.spawn((
+				PbrBundle {
 					mesh: meshes.character.clone(),
 					material: materials.character.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
-				})
-				.insert(animation::Object {
+				},
+				animation::Object {
 					id: level_object.id,
-				}),
-			Object::Crate => commands
-				.spawn_bundle(PbrBundle {
+				},
+			)),
+			Object::Crate => commands.spawn((
+				PbrBundle {
 					mesh: meshes.block.clone(),
 					material: materials.wood.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
-				})
-				.insert(animation::Object {
+				},
+				animation::Object {
 					id: level_object.id,
-				}),
+				},
+			)),
 		};
 	}
 }
@@ -115,7 +121,7 @@ fn setup(
 	commands.insert_resource(PendingActions::new());
 
 	// Add lighting.
-	commands.spawn_bundle(PointLightBundle {
+	commands.spawn(PointLightBundle {
 		point_light: PointLight {
 			intensity: 1500.0,
 			shadows_enabled: true,
@@ -126,7 +132,7 @@ fn setup(
 	});
 
 	// Add static camera overlooking the level.
-	commands.spawn_bundle(Camera3dBundle {
+	commands.spawn(Camera3dBundle {
 		transform: Transform::from_xyz(2.0, 5.0, 5.0)
 			.looking_at(Vec3::new(2.0, 0.0, 2.0), Vec3::Y),
 		..default()
@@ -134,6 +140,7 @@ fn setup(
 }
 
 fn control(
+	state: ResMut<State<GameState>>,
 	commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
@@ -142,13 +149,13 @@ fn control(
 ) {
 	if input.just_pressed(KeyCode::Z) {
 		if let Some(change) = level.undo() {
-			start_animation(commands, &change, animation_query);
+			start_animation(state, commands, &change, animation_query);
 			return;
 		}
 	}
 	if input.just_pressed(KeyCode::X) {
 		if let Some(change) = level.redo() {
-			start_animation(commands, &change, animation_query);
+			start_animation(state, commands, &change, animation_query);
 			return;
 		}
 	}
@@ -174,7 +181,7 @@ fn control(
 				// All characters have been assigned moves. Execute turn.
 				let change = level.update(&pending_actions);
 				pending_actions.clear();
-				start_animation(commands, &change, animation_query);
+				start_animation(state, commands, &change, animation_query);
 			}
 		}
 	}
@@ -182,7 +189,17 @@ fn control(
 
 const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
+#[derive(Resource, Deref, DerefMut)]
+struct AnimateTimer(Timer);
+
+impl Default for AnimateTimer {
+	fn default() -> Self {
+		Self(Timer::new(ANIMATION_DURATION, TimerMode::Once))
+	}
+}
+
 fn start_animation(
+	mut state: ResMut<State<GameState>>,
 	mut commands: Commands,
 	change: &Change,
 	mut animation_query: Query<(Entity, &animation::Object)>,
@@ -192,7 +209,6 @@ fn start_animation(
 		let Some(mv) = change.moves.get(&object.id) else { continue };
 		commands.entity(entity).insert(Animator::new(Tween::new(
 			EaseFunction::CubicInOut,
-			TweeningType::Once,
 			ANIMATION_DURATION,
 			TransformPositionLens {
 				start: Vec3::new(mv.from.col as f32, 0.5, mv.from.row as f32),
@@ -200,13 +216,17 @@ fn start_animation(
 			},
 		)));
 	}
-	commands.insert_resource(Timer::new(ANIMATION_DURATION, false));
-	commands.insert_resource(NextState(State::Animate));
+	commands.insert_resource(AnimateTimer::default());
+	state.set(GameState::Animate).unwrap();
 }
 
-fn animate(mut commands: Commands, time: Res<Time>, mut timer: ResMut<Timer>) {
+fn animate(
+	mut state: ResMut<State<GameState>>,
+	time: Res<Time>,
+	mut timer: ResMut<AnimateTimer>,
+) {
 	timer.tick(time.delta());
 	if timer.finished() {
-		commands.insert_resource(NextState(State::Control));
+		state.set(GameState::Control).unwrap();
 	}
 }

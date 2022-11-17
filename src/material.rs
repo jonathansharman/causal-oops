@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+#[derive(Resource)]
 pub struct Materials {
 	pub character: Handle<StandardMaterial>,
 	pub wood: Handle<StandardMaterial>,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use bevy::utils::HashMap;
+use bevy::{prelude::*, utils::HashMap};
 
 use crate::action::{Action, PendingActions};
 
@@ -74,6 +74,7 @@ pub struct LevelObject {
 }
 
 /// The complete state of a level at a single point in time.
+#[derive(Resource)]
 pub struct Level {
 	width: usize,
 	height: usize,

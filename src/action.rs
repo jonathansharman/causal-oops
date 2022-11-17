@@ -9,7 +9,7 @@ pub enum Action {
 }
 
 /// The actions to be performed in a turn, by character ID.
-#[derive(Deref, DerefMut)]
+#[derive(Resource, Deref, DerefMut)]
 pub struct PendingActions(HashMap<ID, Action>);
 
 impl PendingActions {

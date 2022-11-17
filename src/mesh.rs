@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+#[derive(Resource)]
 pub struct Meshes {
 	pub character: Handle<Mesh>,
 	pub block: Handle<Mesh>,
