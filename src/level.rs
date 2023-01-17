@@ -54,15 +54,14 @@ pub enum Tile {
 	Wall,
 }
 
-/// A character or portal identifier. Enables correlating characters with
-/// portals and character animations across frames.
+/// An object identifier. Enables correlating object animations across frames.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ID(pub u32);
 
 /// Something that can be moved around a level.
 #[derive(Clone, Copy)]
 pub enum Object {
-	Character,
+	Character { index: usize },
 	Crate,
 }
 
@@ -197,7 +196,7 @@ impl Level {
 	fn add_object(&mut self, level_object: LevelObject) {
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
-		if let Object::Character = level_object.object {
+		if let Object::Character { .. } = level_object.object {
 			self.character_ids.push(level_object.id);
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
@@ -285,7 +284,7 @@ pub fn test_level() -> Level {
 	};
 	level.add_object(LevelObject {
 		id: ID(0),
-		object: Object::Character,
+		object: Object::Character { index: 0 },
 		coords: Coords::new(1, 1),
 	});
 	level.add_object(LevelObject {
@@ -295,7 +294,7 @@ pub fn test_level() -> Level {
 	});
 	level.add_object(LevelObject {
 		id: ID(2),
-		object: Object::Character,
+		object: Object::Character { index: 1 },
 		coords: Coords::new(1, 3),
 	});
 	level

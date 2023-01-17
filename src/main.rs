@@ -74,10 +74,10 @@ fn spawn_level(
 	for level_object in level.iter_objects() {
 		let Coords { row, col } = level_object.coords;
 		match level_object.object {
-			Object::Character => commands.spawn((
+			Object::Character { index } => commands.spawn((
 				PbrBundle {
 					mesh: meshes.character.clone(),
-					material: materials.character.clone(),
+					material: materials.characters[index].clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				},
