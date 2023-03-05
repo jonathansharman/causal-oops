@@ -6,7 +6,7 @@ use bevy_tweening::{
 };
 
 use action::{Action, PendingActions};
-use level::{Change, Coords, Direction, Level, Object, Tile};
+use level::{Change, Coords, Level, Object, Offset, Tile};
 use material::Materials;
 use mesh::Meshes;
 use state::GameState;
@@ -51,7 +51,7 @@ fn spawn_level(
 	// Spawn tile entities.
 	for row in 0..level.height() {
 		for col in 0..level.width() {
-			match level.tile(Coords::new(row, col)) {
+			match level.tile(Coords::new(row as i32, col as i32)) {
 				Tile::Floor => commands.spawn(PbrBundle {
 					mesh: meshes.block.clone(),
 					material: materials.floor.clone(),
@@ -85,7 +85,7 @@ fn spawn_level(
 					id: level_object.id,
 				},
 			)),
-			Object::Crate => commands.spawn((
+			Object::Crate { .. } => commands.spawn((
 				PbrBundle {
 					mesh: meshes.block.clone(),
 					material: materials.wood.clone(),
@@ -133,8 +133,8 @@ fn setup(
 
 	// Add static camera overlooking the level.
 	commands.spawn(Camera3dBundle {
-		transform: Transform::from_xyz(2.0, 5.0, 5.0)
-			.looking_at(Vec3::new(2.0, 0.0, 2.0), Vec3::Y),
+		transform: Transform::from_xyz(3.0, 8.0, 8.0)
+			.looking_at(Vec3::new(3.0, 0.0, 3.0), Vec3::Y),
 		..default()
 	});
 }
@@ -163,20 +163,20 @@ fn control(
 	let action = if input.just_pressed(KeyCode::Space) {
 		Some(Action::Wait)
 	} else if input.just_pressed(KeyCode::Left) {
-		Some(Action::Push(Direction::Left))
+		Some(Action::Push(Offset::LEFT))
 	} else if input.just_pressed(KeyCode::Right) {
-		Some(Action::Push(Direction::Right))
+		Some(Action::Push(Offset::RIGHT))
 	} else if input.just_pressed(KeyCode::Up) {
-		Some(Action::Push(Direction::Up))
+		Some(Action::Push(Offset::UP))
 	} else if input.just_pressed(KeyCode::Down) {
-		Some(Action::Push(Direction::Down))
+		Some(Action::Push(Offset::DOWN))
 	} else {
 		None
 	};
 
 	if let Some(action) = action {
 		if let Some(id) = level.character_ids().get(pending_actions.len()) {
-			pending_actions.insert(*id, action);
+			pending_actions.push_back((*id, action));
 			if pending_actions.len() == level.character_ids().len() {
 				// All characters have been assigned moves. Execute turn.
 				let change = level.update(&pending_actions);

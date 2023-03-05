@@ -1,49 +1,56 @@
-use std::sync::Arc;
+use std::{
+	ops::{Add, AddAssign},
+	sync::Arc,
+};
 
 use bevy::{prelude::*, utils::HashMap};
 
 use crate::action::{Action, PendingActions};
 
-#[derive(Clone, Copy)]
-pub enum Direction {
-	Up,
-	Down,
-	Left,
-	Right,
-}
-
 /// Row-column coordinates on a [`Level`] grid.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Coords {
-	pub row: usize,
-	pub col: usize,
+	pub row: i32,
+	pub col: i32,
 }
 
 impl Coords {
-	pub fn new(row: usize, col: usize) -> Coords {
+	pub fn new(row: i32, col: i32) -> Coords {
 		Coords { row, col }
 	}
+}
 
-	/// The adjacent coordinates in the given direction.
-	pub fn neighbor(&self, direction: Direction) -> Coords {
-		match direction {
-			Direction::Up => Coords {
-				row: self.row - 1,
-				col: self.col,
-			},
-			Direction::Down => Coords {
-				row: self.row + 1,
-				col: self.col,
-			},
-			Direction::Left => Coords {
-				row: self.row,
-				col: self.col - 1,
-			},
-			Direction::Right => Coords {
-				row: self.row,
-				col: self.col + 1,
-			},
-		}
+/// Row-column offset from [`Coords`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Offset {
+	pub row: i32,
+	pub col: i32,
+}
+
+impl Offset {
+	pub const UP: Offset = Offset::new(-1, 0);
+	pub const DOWN: Offset = Offset::new(1, 0);
+	pub const LEFT: Offset = Offset::new(0, -1);
+	pub const RIGHT: Offset = Offset::new(0, 1);
+
+	pub const fn new(row: i32, col: i32) -> Offset {
+		Offset { row, col }
+	}
+}
+
+impl AddAssign<Offset> for Coords {
+	fn add_assign(&mut self, rhs: Offset) {
+		self.row = self.row + rhs.row;
+		self.col = self.col + rhs.col;
+	}
+}
+
+impl Add<Offset> for Coords {
+	type Output = Coords;
+
+	fn add(mut self, rhs: Offset) -> Self::Output {
+		self += rhs;
+		self
 	}
 }
 
@@ -62,7 +69,7 @@ pub struct ID(pub u32);
 #[derive(Clone, Copy)]
 pub enum Object {
 	Character { index: usize },
-	Crate,
+	Crate { weight: i32 },
 }
 
 /// An [`Object`] along with data relating that object to a [`Level`].
@@ -99,7 +106,7 @@ impl Level {
 
 	/// The tile at `coords`.
 	pub fn tile(&self, coords: Coords) -> Tile {
-		self.tiles[coords.row * self.height + coords.col]
+		self.tiles[coords.row as usize * self.height + coords.col as usize]
 	}
 
 	/// Iterates over all objects in the level.
@@ -115,17 +122,75 @@ impl Level {
 	/// Updates the level by executing the given `pending_actions`, returning
 	/// the resulting (possibly trivial) [`Change`].
 	pub fn update(&mut self, pending_actions: &PendingActions) -> Arc<Change> {
+		let pushers = pending_actions
+			.iter()
+			.filter_map(|(id, action)| {
+				if let Action::Push(offset) = action {
+					Some((*id, *offset))
+				} else {
+					None
+				}
+			})
+			.collect::<HashMap<_, _>>();
+		let teams = pushers
+			.iter()
+			.filter_map(|(id, &offset)| {
+				let pusher = &self.objects_by_id[id];
+				let mut coords = pusher.coords + offset;
+				let mut strength = 1;
+				let mut count = 1;
+				loop {
+					if let Tile::Wall = self.tile(coords) {
+						return None;
+					}
+					let Some(other_id) = self.object_ids_by_coords.get(&coords) else {
+						break;
+					};
+					let level_object = &self.objects_by_id[other_id];
+					match level_object.object {
+						Object::Character { .. } => {
+							if let Some(&other_offset) = pushers.get(other_id) {
+								if other_offset != offset {
+									return None;
+								} else {
+									strength += 1;
+								}
+							} else {
+								strength -= 1;
+							}
+						}
+						Object::Crate { weight } => {
+							strength -= weight;
+						}
+					}
+					if strength < 0 {
+						return None;
+					}
+					count += 1;
+					coords += offset;
+				}
+				let team = Team {
+					start: pusher.coords,
+					offset,
+					count,
+					strength,
+				};
+				Some((pusher.coords, team))
+			})
+			.collect::<HashMap<_, _>>();
+
+		// Create and apply the change.
 		let mut change = Change {
 			moves: HashMap::new(),
 		};
-		for (id, action) in pending_actions.iter() {
-			match action {
-				Action::Wait => (),
-				Action::Push(direction) => {
-					change.moves.insert(*id, self.push_object(id, *direction));
-				}
-			}
+		for team in teams.values() {
+			let id = self.object_ids_by_coords[&team.start];
+			let mv = self.get_move(id, team.offset);
+			change.moves.insert(id, mv);
 		}
+		self.apply(&change);
+
+		// Add the change to the turn history and return it.
 		let reverse = Arc::new(change.reversed());
 		let change = Arc::new(change);
 		// Truncate history to remove any future states. This is a no-op if the
@@ -167,28 +232,23 @@ impl Level {
 
 	/// Applies `change` to the level's state without affecting history.
 	fn apply(&mut self, change: &Change) {
+		// To make sure every target tile is open, first remove all movers.
+		for mv in change.moves.values() {
+			self.object_ids_by_coords.remove(&mv.from);
+		}
+		// Now place the movers into their new tiles.
 		for (id, mv) in change.moves.iter() {
 			let level_object = self.objects_by_id.get_mut(id).unwrap();
-			Self::move_object(
-				level_object,
-				&mut self.object_ids_by_coords,
-				mv.from,
-				mv.to,
-			);
+			self.object_ids_by_coords.insert(mv.to, level_object.id);
+			level_object.coords = mv.to;
 		}
 	}
 
-	/// Pushes the object with the given ID towards `direction`.
-	fn push_object(&mut self, id: &ID, direction: Direction) -> Move {
-		let level_object = self.objects_by_id.get_mut(id).unwrap();
+	/// Gets a [`Move`] of the object `id` by `offset`.
+	fn get_move(&mut self, id: ID, offset: Offset) -> Move {
+		let level_object = self.objects_by_id.get_mut(&id).unwrap();
 		let from = level_object.coords;
-		let to = level_object.coords.neighbor(direction);
-		Self::move_object(
-			level_object,
-			&mut self.object_ids_by_coords,
-			from,
-			to,
-		);
+		let to = from + offset;
 		Move { from, to }
 	}
 
@@ -200,19 +260,6 @@ impl Level {
 			self.character_ids.push(level_object.id);
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
-	}
-
-	/// Moves `level_object` from `from` to `to`, updating
-	/// `object_ids_by_coords` appropriately.
-	fn move_object(
-		level_object: &mut LevelObject,
-		object_ids_by_coords: &mut HashMap<Coords, ID>,
-		from: Coords,
-		to: Coords,
-	) {
-		object_ids_by_coords.remove(&from);
-		object_ids_by_coords.insert(to, level_object.id);
-		level_object.coords = to;
 	}
 }
 
@@ -238,6 +285,16 @@ pub struct Change {
 	pub moves: HashMap<ID, Move>,
 }
 
+/// A connected line of pushers and passive objects, for use in the resolution
+/// of simultaneous movement.
+struct Team {
+	start: Coords,
+	/// The unit offset in the direction of the team.
+	offset: Offset,
+	count: usize,
+	strength: i32,
+}
+
 /// A bidirectional change, i.e. a pair inverse changes.
 struct BiChange {
 	forward: Arc<Change>,
@@ -257,7 +314,7 @@ impl Change {
 }
 
 pub fn test_level() -> Level {
-	let (width, height) = (5, 5);
+	let (width, height) = (7, 7);
 	let mut tiles = Vec::with_capacity(width * height);
 	for row in 0..height {
 		for col in 0..width {
@@ -289,11 +346,21 @@ pub fn test_level() -> Level {
 	});
 	level.add_object(LevelObject {
 		id: ID(1),
-		object: Object::Crate,
+		object: Object::Crate { weight: 1 },
 		coords: Coords::new(3, 3),
 	});
 	level.add_object(LevelObject {
 		id: ID(2),
+		object: Object::Crate { weight: 1 },
+		coords: Coords::new(3, 4),
+	});
+	level.add_object(LevelObject {
+		id: ID(3),
+		object: Object::Crate { weight: 1 },
+		coords: Coords::new(3, 5),
+	});
+	level.add_object(LevelObject {
+		id: ID(4),
 		object: Object::Character { index: 1 },
 		coords: Coords::new(1, 3),
 	});
