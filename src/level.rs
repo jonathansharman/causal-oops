@@ -1,5 +1,5 @@
 use std::{
-	ops::{Add, AddAssign},
+	ops::{Add, AddAssign, Mul, Neg},
 	sync::Arc,
 };
 
@@ -38,6 +38,39 @@ impl Offset {
 	}
 }
 
+impl Neg for Offset {
+	type Output = Self;
+
+	fn neg(self) -> Self {
+		Self {
+			row: -self.row,
+			col: -self.col,
+		}
+	}
+}
+
+impl Mul<i32> for Offset {
+	type Output = Self;
+
+	fn mul(self, rhs: i32) -> Self {
+		Self {
+			row: self.row * rhs,
+			col: self.col * rhs,
+		}
+	}
+}
+
+impl Mul<Offset> for i32 {
+	type Output = Offset;
+
+	fn mul(self, rhs: Offset) -> Offset {
+		Offset {
+			row: self * rhs.row,
+			col: self * rhs.col,
+		}
+	}
+}
+
 impl AddAssign<Offset> for Coords {
 	fn add_assign(&mut self, rhs: Offset) {
 		self.row = self.row + rhs.row;
@@ -46,9 +79,9 @@ impl AddAssign<Offset> for Coords {
 }
 
 impl Add<Offset> for Coords {
-	type Output = Coords;
+	type Output = Self;
 
-	fn add(mut self, rhs: Offset) -> Self::Output {
+	fn add(mut self, rhs: Offset) -> Self {
 		self += rhs;
 		self
 	}
@@ -119,10 +152,11 @@ impl Level {
 		&self.character_ids
 	}
 
-	/// Updates the level by executing the given `pending_actions`, returning
-	/// the resulting (possibly trivial) [`Change`].
+	/// Updates the level by executing `pending_actions`, returning the
+	/// resulting (possibly trivial) [`Change`].
 	pub fn update(&mut self, pending_actions: &PendingActions) -> Arc<Change> {
-		let pushers = pending_actions
+		// Map pushers to their desired offsets.
+		let pushers: HashMap<ID, Offset> = pending_actions
 			.iter()
 			.filter_map(|(id, action)| {
 				if let Action::Push(offset) = action {
@@ -131,66 +165,86 @@ impl Level {
 					None
 				}
 			})
-			.collect::<HashMap<_, _>>();
-		let teams = pushers
+			.collect();
+		// Build the set of teams, keyed by starting coordinates.
+		let teams: HashMap<Coords, Team> = pushers
 			.iter()
 			.filter_map(|(id, &offset)| {
 				let pusher = &self.objects_by_id[id];
+				// The team starts with just the backmost pusher.
+				let mut team = Team {
+					start: pusher.coords,
+					offset,
+					count: 1,
+					strength: 1,
+				};
+				// Consider tiles in the direction of the backmost pusher.
 				let mut coords = pusher.coords + offset;
-				let mut strength = 1;
-				let mut count = 1;
 				loop {
+					// Nullify teams facing a wall.
 					if let Tile::Wall = self.tile(coords) {
 						return None;
 					}
-					let Some(other_id) = self.object_ids_by_coords.get(&coords) else {
-						break;
-					};
+					let other_id = self.object_ids_by_coords.get(&coords);
+					let Some(other_id) = other_id else { break };
 					let level_object = &self.objects_by_id[other_id];
 					match level_object.object {
 						Object::Character { .. } => {
 							if let Some(&other_offset) = pushers.get(other_id) {
-								if other_offset != offset {
+								if other_offset == offset {
+									// This pusher is on this team.
+									team.strength += 1;
+								} else if other_offset == -offset {
+									// Nullify opposing teams.
 									return None;
 								} else {
-									strength += 1;
+									// This pusher is part of an orthogonal
+									// team. It may be able to get out of the
+									// way.
+									break;
 								}
 							} else {
-								strength -= 1;
+								// This character is dead weight.
+								team.strength -= 1;
 							}
 						}
 						Object::Crate { weight } => {
-							strength -= weight;
+							team.strength -= weight;
 						}
 					}
-					if strength < 0 {
+					// Strength must remain at or above zero the entire length
+					// of the team.
+					if team.strength < 0 {
 						return None;
 					}
-					count += 1;
+					team.count += 1;
 					coords += offset;
 				}
-				let team = Team {
-					start: pusher.coords,
-					offset,
-					count,
-					strength,
-				};
 				Some((pusher.coords, team))
 			})
-			.collect::<HashMap<_, _>>();
+			.collect();
+
+		// TODO: Cut weaker overlapping orthogonal teams.
+
+		// TODO: Merge overlapping teams.
+
+		// TODO: Resolve team collisions.
 
 		// Create and apply the change.
 		let mut change = Change {
 			moves: HashMap::new(),
 		};
 		for team in teams.values() {
-			let id = self.object_ids_by_coords[&team.start];
-			let mv = self.get_move(id, team.offset);
-			change.moves.insert(id, mv);
+			for i in 0..team.count {
+				let coords = team.start + i as i32 * team.offset;
+				let id = self.object_ids_by_coords[&coords];
+				let mv = self.get_move(id, team.offset);
+				change.moves.insert(id, mv);
+			}
 		}
 		self.apply(&change);
 
-		// Add the change to the turn history and return it.
+		// Add the change to the turn history.
 		let reverse = Arc::new(change.reversed());
 		let change = Arc::new(change);
 		// Truncate history to remove any future states. This is a no-op if the
@@ -201,6 +255,7 @@ impl Level {
 			reverse,
 		});
 		self.turn += 1;
+
 		change
 	}
 
