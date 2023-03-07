@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use bevy_tweening::{
-	lens::TransformPositionLens, Animator, EaseFunction, Tween, TweeningPlugin,
-};
+use bevy_easings::{Ease, EaseFunction, EasingType, EasingsPlugin};
 
 use action::{Action, PendingActions};
 use level::{Change, Coords, Level, Object, Offset, Tile};
@@ -21,24 +19,19 @@ mod state;
 fn main() {
 	App::new()
 		.add_startup_system(setup)
-		.add_state(GameState::Control)
-		.add_system_set(
-			SystemSet::on_update(GameState::Control).with_system(control),
-		)
-		.add_system_set(
-			SystemSet::on_update(GameState::Animate).with_system(animate),
-		)
+		.add_state::<GameState>()
+		.add_system(control.in_set(OnUpdate(GameState::Control)))
+		.add_system(animate.in_set(OnUpdate(GameState::Animate)))
 		.insert_resource(ClearColor(Color::BLACK))
 		.add_plugins(DefaultPlugins.set(WindowPlugin {
-			window: WindowDescriptor {
+			primary_window: Some(Window {
 				title: "Causal Oops".to_string(),
-				width: 800.0,
-				height: 600.0,
+				resolution: (800.0, 600.0).into(),
 				..default()
-			},
+			}),
 			..default()
 		}))
-		.add_plugin(TweeningPlugin)
+		.add_plugin(EasingsPlugin)
 		.run();
 }
 
@@ -140,7 +133,7 @@ fn setup(
 }
 
 fn control(
-	state: ResMut<State<GameState>>,
+	next_state: ResMut<NextState<GameState>>,
 	commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
@@ -149,13 +142,13 @@ fn control(
 ) {
 	if input.just_pressed(KeyCode::Z) {
 		if let Some(change) = level.undo() {
-			start_animation(state, commands, &change, animation_query);
+			start_animation(next_state, commands, &change, animation_query);
 			return;
 		}
 	}
 	if input.just_pressed(KeyCode::X) {
 		if let Some(change) = level.redo() {
-			start_animation(state, commands, &change, animation_query);
+			start_animation(next_state, commands, &change, animation_query);
 			return;
 		}
 	}
@@ -181,7 +174,7 @@ fn control(
 				// All characters have been assigned moves. Execute turn.
 				let change = level.update(&pending_actions);
 				pending_actions.clear();
-				start_animation(state, commands, &change, animation_query);
+				start_animation(next_state, commands, &change, animation_query);
 			}
 		}
 	}
@@ -199,7 +192,7 @@ impl Default for AnimateTimer {
 }
 
 fn start_animation(
-	mut state: ResMut<State<GameState>>,
+	mut next_state: ResMut<NextState<GameState>>,
 	mut commands: Commands,
 	change: &Change,
 	mut animation_query: Query<(Entity, &animation::Object)>,
@@ -207,26 +200,27 @@ fn start_animation(
 	// Apply movements.
 	for (entity, object) in &mut animation_query {
 		let Some(mv) = change.moves.get(&object.id) else { continue };
-		commands.entity(entity).insert(Animator::new(Tween::new(
-			EaseFunction::CubicInOut,
-			ANIMATION_DURATION,
-			TransformPositionLens {
-				start: Vec3::new(mv.from.col as f32, 0.5, mv.from.row as f32),
-				end: Vec3::new(mv.to.col as f32, 0.5, mv.to.row as f32),
-			},
-		)));
+		commands
+			.entity(entity)
+			.insert(Transform::from(mv.from).ease_to(
+				Transform::from(mv.to),
+				EaseFunction::CubicInOut,
+				EasingType::Once {
+					duration: ANIMATION_DURATION,
+				},
+			));
 	}
 	commands.insert_resource(AnimateTimer::default());
-	state.set(GameState::Animate).unwrap();
+	next_state.set(GameState::Animate);
 }
 
 fn animate(
-	mut state: ResMut<State<GameState>>,
+	mut next_state: ResMut<NextState<GameState>>,
 	time: Res<Time>,
 	mut timer: ResMut<AnimateTimer>,
 ) {
 	timer.tick(time.delta());
 	if timer.finished() {
-		state.set(GameState::Control).unwrap();
+		next_state.set(GameState::Control);
 	}
 }

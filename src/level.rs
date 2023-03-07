@@ -20,6 +20,12 @@ impl Coords {
 	}
 }
 
+impl From<Coords> for Transform {
+	fn from(value: Coords) -> Self {
+		Transform::from_xyz(value.col as f32, 0.5, value.row as f32)
+	}
+}
+
 /// Row-column offset from [`Coords`].
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Offset {

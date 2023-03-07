@@ -1,7 +1,10 @@
+use bevy::prelude::States;
+
 /// The state of the game.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(States, Clone, PartialEq, Eq, Debug, Hash, Default)]
 pub enum GameState {
 	/// Receiving player input
+	#[default]
 	Control,
 	/// Animating level change
 	Animate,
