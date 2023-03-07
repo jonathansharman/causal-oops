@@ -7,7 +7,6 @@ use action::{Action, PendingActions};
 use level::{Change, Coords, Level, Object, Offset, Tile};
 use material::Materials;
 use mesh::Meshes;
-use state::GameState;
 
 mod action;
 mod animation;
@@ -19,9 +18,7 @@ mod state;
 fn main() {
 	App::new()
 		.add_startup_system(setup)
-		.add_state::<GameState>()
-		.add_system(control.in_set(OnUpdate(GameState::Control)))
-		.add_system(animate.in_set(OnUpdate(GameState::Animate)))
+		.add_system(control)
 		.insert_resource(ClearColor(Color::BLACK))
 		.add_plugins(DefaultPlugins.set(WindowPlugin {
 			primary_window: Some(Window {
@@ -133,22 +130,21 @@ fn setup(
 }
 
 fn control(
-	next_state: ResMut<NextState<GameState>>,
 	commands: Commands,
 	input: Res<Input<KeyCode>>,
 	mut level: ResMut<Level>,
 	mut pending_actions: ResMut<PendingActions>,
-	animation_query: Query<(Entity, &animation::Object)>,
+	animation_query: Query<(Entity, &Transform, &animation::Object)>,
 ) {
 	if input.just_pressed(KeyCode::Z) {
 		if let Some(change) = level.undo() {
-			start_animation(next_state, commands, &change, animation_query);
+			animate(commands, &change, animation_query);
 			return;
 		}
 	}
 	if input.just_pressed(KeyCode::X) {
 		if let Some(change) = level.redo() {
-			start_animation(next_state, commands, &change, animation_query);
+			animate(commands, &change, animation_query);
 			return;
 		}
 	}
@@ -174,7 +170,7 @@ fn control(
 				// All characters have been assigned moves. Execute turn.
 				let change = level.update(&pending_actions);
 				pending_actions.clear();
-				start_animation(next_state, commands, &change, animation_query);
+				animate(commands, &change, animation_query);
 			}
 		}
 	}
@@ -182,45 +178,20 @@ fn control(
 
 const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
-#[derive(Resource, Deref, DerefMut)]
-struct AnimateTimer(Timer);
-
-impl Default for AnimateTimer {
-	fn default() -> Self {
-		Self(Timer::new(ANIMATION_DURATION, TimerMode::Once))
-	}
-}
-
-fn start_animation(
-	mut next_state: ResMut<NextState<GameState>>,
+fn animate(
 	mut commands: Commands,
 	change: &Change,
-	mut animation_query: Query<(Entity, &animation::Object)>,
+	animation_query: Query<(Entity, &Transform, &animation::Object)>,
 ) {
 	// Apply movements.
-	for (entity, object) in &mut animation_query {
+	for (entity, from, object) in &animation_query {
 		let Some(mv) = change.moves.get(&object.id) else { continue };
-		commands
-			.entity(entity)
-			.insert(Transform::from(mv.from).ease_to(
-				Transform::from(mv.to),
-				EaseFunction::CubicInOut,
-				EasingType::Once {
-					duration: ANIMATION_DURATION,
-				},
-			));
-	}
-	commands.insert_resource(AnimateTimer::default());
-	next_state.set(GameState::Animate);
-}
-
-fn animate(
-	mut next_state: ResMut<NextState<GameState>>,
-	time: Res<Time>,
-	mut timer: ResMut<AnimateTimer>,
-) {
-	timer.tick(time.delta());
-	if timer.finished() {
-		next_state.set(GameState::Control);
+		commands.entity(entity).insert(from.ease_to(
+			Transform::from(mv.to),
+			EaseFunction::CubicInOut,
+			EasingType::Once {
+				duration: ANIMATION_DURATION,
+			},
+		));
 	}
 }
