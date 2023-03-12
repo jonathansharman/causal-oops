@@ -162,7 +162,7 @@ impl Level {
 
 	/// The tile at `coords`.
 	pub fn tile(&self, coords: Coords) -> Tile {
-		self.tiles[coords.row as usize * self.height + coords.col as usize]
+		self.tiles[coords.row as usize * self.width + coords.col as usize]
 	}
 
 	/// Iterates over all objects in the level.
