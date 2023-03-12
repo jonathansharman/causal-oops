@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use bevy::prelude::*;
 
-use crate::level::{Offset, ID};
+use crate::level::{Id, Offset};
 
 /// An action that can be performed by a character.
 pub enum Action {
@@ -12,7 +12,7 @@ pub enum Action {
 
 /// The actions to be performed in a turn, by character ID.
 #[derive(Resource, Deref, DerefMut)]
-pub struct PendingActions(VecDeque<(ID, Action)>);
+pub struct PendingActions(VecDeque<(Id, Action)>);
 
 impl PendingActions {
 	pub fn new() -> Self {

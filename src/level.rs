@@ -3,12 +3,15 @@ use std::{
 	sync::Arc,
 };
 
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{
+	prelude::*,
+	utils::{HashMap, HashSet},
+};
 
 use crate::action::{Action, PendingActions};
 
 /// Row-column coordinates on a [`Level`] grid.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Coords {
 	pub row: i32,
 	pub col: i32,
@@ -27,7 +30,7 @@ impl From<Coords> for Transform {
 }
 
 /// Row-column offset from [`Coords`].
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Offset {
 	pub row: i32,
 	pub col: i32,
@@ -41,6 +44,20 @@ impl Offset {
 
 	pub const fn new(row: i32, col: i32) -> Offset {
 		Offset { row, col }
+	}
+}
+
+impl Ord for Offset {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		self.row
+			.cmp(&other.row)
+			.then_with(|| self.col.cmp(&other.col))
+	}
+}
+
+impl PartialOrd for Offset {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
 	}
 }
 
@@ -102,7 +119,7 @@ pub enum Tile {
 
 /// An object identifier. Enables correlating object animations across frames.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ID(pub u32);
+pub struct Id(pub u32);
 
 /// Something that can be moved around a level.
 #[derive(Clone, Copy)]
@@ -113,7 +130,7 @@ pub enum Object {
 
 /// An [`Object`] along with data relating that object to a [`Level`].
 pub struct LevelObject {
-	pub id: ID,
+	pub id: Id,
 	pub object: Object,
 	pub coords: Coords,
 }
@@ -124,9 +141,9 @@ pub struct Level {
 	width: usize,
 	height: usize,
 	tiles: Vec<Tile>,
-	objects_by_id: HashMap<ID, LevelObject>,
-	object_ids_by_coords: HashMap<Coords, ID>,
-	character_ids: Vec<ID>,
+	objects_by_id: HashMap<Id, LevelObject>,
+	object_ids_by_coords: HashMap<Coords, Id>,
+	character_ids: Vec<Id>,
 	/// History of the level's state, for seeking backward and forward in time.
 	history: Vec<BiChange>,
 	turn: usize,
@@ -154,7 +171,7 @@ impl Level {
 	}
 
 	/// IDs of characters in this level, in order of appearance.
-	pub fn character_ids(&self) -> &[ID] {
+	pub fn character_ids(&self) -> &[Id] {
 		&self.character_ids
 	}
 
@@ -162,7 +179,7 @@ impl Level {
 	/// resulting (possibly trivial) [`Change`].
 	pub fn update(&mut self, pending_actions: &PendingActions) -> Arc<Change> {
 		// Map pushers to their desired offsets.
-		let pushers: HashMap<ID, Offset> = pending_actions
+		let pushers: HashMap<Id, Offset> = pending_actions
 			.iter()
 			.filter_map(|(id, action)| {
 				if let Action::Push(offset) = action {
@@ -172,8 +189,10 @@ impl Level {
 				}
 			})
 			.collect();
-		// Build the set of teams, keyed by starting coordinates.
-		let teams: HashMap<Coords, Team> = pushers
+
+		// Build the set of teams, keyed by starting coordinates. Teams may not
+		// be maximal; i.e. some teams may be subsumed by larger ones.
+		let mut teams: HashMap<Coords, Team> = pushers
 			.iter()
 			.filter_map(|(id, &offset)| {
 				let pusher = &self.objects_by_id[id];
@@ -230,24 +249,120 @@ impl Level {
 			})
 			.collect();
 
-		// TODO: Cut weaker overlapping orthogonal teams.
+		// Sort the teams by priority.
+		let mut sorted_teams: Vec<Team> = teams.values().copied().collect();
+		sorted_teams.sort();
+		let sorted_teams = sorted_teams;
 
-		// TODO: Merge overlapping teams.
+		// Visit teams in order of decreasing priority, cutting any overlapping
+		// non-subteams. Don't discard subteams yet because they could become
+		// maximal if superteams are discarded.
+		let mut cut_teams = HashSet::new();
+		for team in sorted_teams.iter().rev() {
+			if cut_teams.contains(&team.start) {
+				continue;
+			}
+			cut_teams.extend(teams.values().filter_map(|other| {
+				team.collides(other).then_some(other.start)
+			}));
+		}
+		for team_start in cut_teams {
+			teams.remove(&team_start);
+		}
 
-		// TODO: Resolve team collisions.
+		// Now that actual collisions are resolved, discard subteams. Each
+		// subteam starts within the "tail" of another team's coordinates set.
+		let subteams: HashSet<Coords> = teams
+			.values()
+			.flat_map(|team| team.coords().skip(1))
+			.collect();
+		teams.retain(|team_start, _| !subteams.contains(team_start));
 
-		// Create and apply the change.
-		let mut change = Change {
-			moves: HashMap::new(),
-		};
+		// For each team, precompute the collisions with other teams given that
+		// either/both teams move this turn.
+		let mut stay_move_collisions = HashMap::new();
+		let mut move_stay_collisions = HashMap::new();
+		let mut move_move_collisions = HashMap::new();
 		for team in teams.values() {
-			for i in 0..team.count {
-				let coords = team.start + i as i32 * team.offset;
-				let id = self.object_ids_by_coords[&coords];
-				let mv = self.get_move(id, team.offset);
-				change.moves.insert(id, mv);
+			let team_moved = team.moved();
+			for other in teams.values() {
+				let other_moved = other.moved();
+				if team.collides(&other_moved) {
+					stay_move_collisions
+						.entry(team.start)
+						.or_insert(HashSet::new())
+						.insert(other.start);
+				}
+				if team_moved.collides(other) {
+					move_stay_collisions
+						.entry(team.start)
+						.or_insert(HashSet::new())
+						.insert(other.start);
+				}
+				if team_moved.collides(&other_moved) {
+					move_move_collisions
+						.entry(team.start)
+						.or_insert(HashSet::new())
+						.insert(other.start);
+				}
 			}
 		}
+
+		// Visit each team in order of increasing priority, resolving collisions
+		// by marking teams as blocked (unable to move). This tends to give the
+		// right-of-way to stronger teams.
+		let mut blocked_teams = HashSet::new();
+		for team in sorted_teams {
+			if blocked_teams.contains(&team.start) {
+				// This team was already blocked; nothing more to do.
+				continue;
+			}
+			// Blocking a team can cause other teams to become blocked, which we
+			// track with an iterative work queue.
+			let mut block_queue = Vec::new();
+			// Block this team if moving it may cause a collision with an
+			// unblocked team. These other teams could become blocked later, so
+			// this algorithm may not always block the fewest possible teams.
+			if let Some(others) = move_move_collisions.get(&team.start) {
+				if others.iter().any(|other| !blocked_teams.contains(other)) {
+					block_queue = vec![team.start];
+				}
+			}
+			// Block this team if moving it causes a collision with a blocked
+			// team.
+			if let Some(others) = move_stay_collisions.get(&team.start) {
+				if others.iter().any(|other| blocked_teams.contains(other)) {
+					block_queue = vec![team.start];
+				}
+			}
+			// Iteratively block teams as needed.
+			while let Some(team_start) = block_queue.pop() {
+				if !blocked_teams.insert(team_start) {
+					// This team was already blocked; nothing more to do.
+					continue;
+				}
+				// Blocking this team may block other teams, and so on.
+				if let Some(others) = stay_move_collisions.get(&team_start) {
+					block_queue.extend(others);
+				}
+			}
+		}
+
+		// Move the objects in unblocked teams.
+		let mut moves = HashMap::new();
+		for team in teams
+			.values()
+			.filter(|team| !blocked_teams.contains(&team.start))
+		{
+			for coords in team.coords() {
+				let id = self.object_ids_by_coords[&coords];
+				let mv = self.get_move(id, team.offset);
+				moves.insert(id, mv);
+			}
+		}
+
+		// Create and apply the change.
+		let change = Change { moves };
 		self.apply(&change);
 
 		// Add the change to the turn history.
@@ -306,9 +421,8 @@ impl Level {
 	}
 
 	/// Gets a [`Move`] of the object `id` by `offset`.
-	fn get_move(&mut self, id: ID, offset: Offset) -> Move {
-		let level_object = self.objects_by_id.get_mut(&id).unwrap();
-		let from = level_object.coords;
+	fn get_move(&self, id: Id, offset: Offset) -> Move {
+		let from = self.objects_by_id[&id].coords;
 		let to = from + offset;
 		Move { from, to }
 	}
@@ -343,17 +457,82 @@ impl Move {
 /// A change from one [`Level`] state to another.
 #[derive(Clone)]
 pub struct Change {
-	pub moves: HashMap<ID, Move>,
+	pub moves: HashMap<Id, Move>,
 }
 
 /// A connected line of pushers and passive objects, for use in the resolution
 /// of simultaneous movement.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct Team {
 	start: Coords,
 	/// The unit offset in the direction of the team.
 	offset: Offset,
 	count: usize,
 	strength: i32,
+}
+
+impl Team {
+	/// A copy of this team after applying `offset` to `start`.
+	fn moved(&self) -> Team {
+		Team {
+			start: self.start + self.offset,
+			..*self
+		}
+	}
+
+	/// An iterator over the coordinates occupied by objects in this team.
+	fn coords(&self) -> TeamCoordsIterator {
+		TeamCoordsIterator {
+			team: *self,
+			idx: 0,
+		}
+	}
+
+	/// Whether `self` and `other` collide. Subteams are not considered to
+	/// collide with superteams.
+	fn collides(&self, other: &Team) -> bool {
+		if self.offset == other.offset {
+			// Teams can only be in collision if one is a subteam of the other.
+			return false;
+		}
+		// Could check this in constant time, but this is simpler/good enough.
+		self.coords().any(|c1| other.coords().any(|c2| c1 == c2))
+	}
+}
+
+struct TeamCoordsIterator {
+	team: Team,
+	idx: usize,
+}
+
+impl Iterator for TeamCoordsIterator {
+	type Item = Coords;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.idx < self.team.count {
+			let result = self.team.start + self.idx as i32 * self.team.offset;
+			self.idx += 1;
+			Some(result)
+		} else {
+			None
+		}
+	}
+}
+
+impl Ord for Team {
+	fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+		// Prioritize teams by strength, breaking ties by offset for the sake of
+		// determinism.
+		self.strength
+			.cmp(&other.strength)
+			.then_with(|| self.offset.cmp(&other.offset))
+	}
+}
+
+impl PartialOrd for Team {
+	fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+		Some(self.cmp(other))
+	}
 }
 
 /// A bidirectional change, i.e. a pair inverse changes.
@@ -401,27 +580,27 @@ pub fn test_level() -> Level {
 		character_ids: Vec::new(),
 	};
 	level.add_object(LevelObject {
-		id: ID(0),
+		id: Id(0),
 		object: Object::Character { index: 0 },
 		coords: Coords::new(1, 1),
 	});
 	level.add_object(LevelObject {
-		id: ID(1),
+		id: Id(1),
 		object: Object::Crate { weight: 1 },
 		coords: Coords::new(3, 3),
 	});
 	level.add_object(LevelObject {
-		id: ID(2),
+		id: Id(2),
 		object: Object::Crate { weight: 1 },
 		coords: Coords::new(3, 4),
 	});
 	level.add_object(LevelObject {
-		id: ID(3),
+		id: Id(3),
 		object: Object::Crate { weight: 1 },
 		coords: Coords::new(3, 5),
 	});
 	level.add_object(LevelObject {
-		id: ID(4),
+		id: Id(4),
 		object: Object::Character { index: 1 },
 		coords: Coords::new(1, 3),
 	});
