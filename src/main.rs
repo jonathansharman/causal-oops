@@ -102,7 +102,6 @@ fn setup(
 	// Create level.
 	let level = level::test_level();
 	spawn_level(&mut commands, &meshes, &materials, &level);
-	commands.insert_resource(level);
 
 	// Insert mesh and material resources.
 	commands.insert_resource(meshes);
@@ -110,6 +109,19 @@ fn setup(
 
 	commands.insert_resource(PendingActions::new());
 
+	// Add static camera overlooking the level.
+	let center_x = (level.width() as f32 - 1.0) / 2.0;
+	let center_z = (level.height() as f32 - 1.0) / 2.0;
+	let diameter = level.width().max(level.height()) as f32;
+	commands.spawn(Camera3dBundle {
+		transform: Transform::from_xyz(
+			center_x,
+			diameter,
+			level.height() as f32,
+		)
+		.looking_at(Vec3::new(center_x, 0.0, center_z), Vec3::Y),
+		..default()
+	});
 	// Add lighting.
 	commands.spawn(PointLightBundle {
 		point_light: PointLight {
@@ -117,16 +129,12 @@ fn setup(
 			shadows_enabled: true,
 			..default()
 		},
-		transform: Transform::from_xyz(4.0, 8.0, 4.0),
+		transform: Transform::from_xyz(0.0, 10.0, 0.0),
 		..default()
 	});
 
-	// Add static camera overlooking the level.
-	commands.spawn(Camera3dBundle {
-		transform: Transform::from_xyz(3.0, 8.0, 8.0)
-			.looking_at(Vec3::new(3.0, 0.0, 3.0), Vec3::Y),
-		..default()
-	});
+	// Insert level resource.
+	commands.insert_resource(level);
 }
 
 fn control(
