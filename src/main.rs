@@ -7,12 +7,14 @@ use action::{Action, PendingActions};
 use level::{Change, Coords, Level, Object, Offset, Tile};
 use material::Materials;
 use mesh::Meshes;
+use models::Models;
 
 mod action;
 mod animation;
 mod level;
 mod material;
 mod mesh;
+mod models;
 mod state;
 
 fn main() {
@@ -34,6 +36,7 @@ fn main() {
 
 fn spawn_level(
 	commands: &mut Commands,
+	models: &Models,
 	meshes: &Meshes,
 	materials: &Materials,
 	level: &Level,
@@ -42,17 +45,15 @@ fn spawn_level(
 	for row in 0..level.height() {
 		for col in 0..level.width() {
 			match level.tile(Coords::new(row as i32, col as i32)) {
-				Tile::Floor => commands.spawn(PbrBundle {
-					mesh: meshes.block.clone(),
-					material: materials.floor.clone(),
+				Tile::Floor => commands.spawn(SceneBundle {
+					scene: models.floor.clone(),
 					transform: Transform::from_xyz(
 						col as f32, -0.5, row as f32,
 					),
 					..default()
 				}),
-				Tile::Wall => commands.spawn(PbrBundle {
-					mesh: meshes.block.clone(),
-					material: materials.wall.clone(),
+				Tile::Wall => commands.spawn(SceneBundle {
+					scene: models.wall.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
 					..default()
 				}),
@@ -63,28 +64,43 @@ fn spawn_level(
 	// Spawn object entities.
 	for level_object in level.iter_objects() {
 		let Coords { row, col } = level_object.coords;
+		let transform = Transform::from_xyz(col as f32, 0.5, row as f32);
+		let object_animation = animation::Object {
+			id: level_object.id,
+		};
 		match level_object.object {
-			Object::Character { index } => commands.spawn((
+			Object::Character { idx } => commands.spawn((
 				PbrBundle {
 					mesh: meshes.character.clone(),
-					material: materials.characters[index].clone(),
-					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
+					material: materials.characters[idx].clone(),
+					transform,
 					..default()
 				},
-				animation::Object {
-					id: level_object.id,
-				},
+				object_animation,
 			)),
-			Object::Crate { .. } => commands.spawn((
-				PbrBundle {
-					mesh: meshes.block.clone(),
-					material: materials.wood.clone(),
-					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
+			Object::WoodenCrate => commands.spawn((
+				SceneBundle {
+					scene: models.wooden_crate.clone(),
+					transform,
 					..default()
 				},
-				animation::Object {
-					id: level_object.id,
+				object_animation,
+			)),
+			Object::SteelCrate => commands.spawn((
+				SceneBundle {
+					scene: models.steel_crate.clone(),
+					transform,
+					..default()
 				},
+				object_animation,
+			)),
+			Object::StoneBlock => commands.spawn((
+				SceneBundle {
+					scene: models.stone_block.clone(),
+					transform,
+					..default()
+				},
+				object_animation,
 			)),
 		};
 	}
@@ -92,16 +108,18 @@ fn spawn_level(
 
 fn setup(
 	mut commands: Commands,
+	mut asset_server: ResMut<AssetServer>,
 	mut mesh_assets: ResMut<Assets<Mesh>>,
 	mut material_assets: ResMut<Assets<StandardMaterial>>,
 ) {
-	// Load meshes and materials.
+	// Load models, meshes, and materials.
+	let models = Models::load(&mut asset_server);
 	let meshes = Meshes::load(&mut mesh_assets);
 	let materials = Materials::load(&mut material_assets);
 
 	// Create level.
 	let level = level::test_level();
-	spawn_level(&mut commands, &meshes, &materials, &level);
+	spawn_level(&mut commands, &models, &meshes, &materials, &level);
 
 	// Insert mesh and material resources.
 	commands.insert_resource(meshes);
@@ -125,7 +143,7 @@ fn setup(
 	// Add lighting.
 	commands.spawn(PointLightBundle {
 		point_light: PointLight {
-			intensity: 1500.0,
+			intensity: 2500.0,
 			shadows_enabled: true,
 			..default()
 		},

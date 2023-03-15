@@ -124,8 +124,21 @@ pub struct Id(pub u32);
 /// Something that can be moved around a level.
 #[derive(Clone, Copy)]
 pub enum Object {
-	Character { index: usize },
-	Crate { weight: i32 },
+	Character { idx: usize },
+	WoodenCrate,
+	SteelCrate,
+	StoneBlock,
+}
+
+impl Object {
+	fn weight(&self) -> i32 {
+		match self {
+			Object::Character { .. } => 1,
+			Object::WoodenCrate => 1,
+			Object::SteelCrate => 2,
+			Object::StoneBlock => 3,
+		}
+	}
 }
 
 /// An [`Object`] along with data relating that object to a [`Level`].
@@ -210,38 +223,32 @@ impl Level {
 					if let Tile::Wall = self.tile(coords) {
 						return None;
 					}
+					// Check for the next object in line.
 					let other_id = self.object_ids_by_coords.get(&coords);
 					let Some(other_id) = other_id else { break };
-					let level_object = &self.objects_by_id[other_id];
-					match level_object.object {
-						Object::Character { .. } => {
-							if let Some(&other_offset) = pushers.get(other_id) {
-								if other_offset == offset {
-									// This pusher is on this team.
-									team.strength += 1;
-								} else if other_offset == -offset {
-									// Nullify opposing teams.
-									return None;
-								} else {
-									// This pusher is part of an orthogonal
-									// team. It may be able to get out of the
-									// way.
-									break;
-								}
-							} else {
-								// This character is dead weight.
-								team.strength -= 1;
-							}
-						}
-						Object::Crate { weight } => {
-							team.strength -= weight;
+					// If the object is a pusher, it may contribute to, oppose,
+					// or be orthogonal to the current team.
+					if let Some(&other_offset) = pushers.get(other_id) {
+						if other_offset == offset {
+							// Contributing; add strength.
+							team.strength += 2;
+						} else if other_offset == -offset {
+							// Opposing; nullify this team.
+							return None;
+						} else {
+							// Part of an orthogonal team - may be able to get
+							// out of the way later.
+							break;
 						}
 					}
-					// Strength must remain at or above zero the entire length
-					// of the team.
+					// The team's strength must remain at or above zero for its
+					// entire length.
+					let other = &self.objects_by_id[other_id].object;
+					team.strength -= other.weight();
 					if team.strength < 0 {
 						return None;
 					}
+					// Welcome to the team.
 					team.count += 1;
 					coords += offset;
 				}
@@ -554,7 +561,7 @@ impl Change {
 }
 
 pub fn test_level() -> Level {
-	let (width, height) = (7, 7);
+	let (width, height) = (9, 9);
 	let mut tiles = Vec::with_capacity(width * height);
 	for row in 0..height {
 		for col in 0..width {
@@ -579,30 +586,28 @@ pub fn test_level() -> Level {
 		turn: 0,
 		character_ids: Vec::new(),
 	};
-	level.add_object(LevelObject {
-		id: Id(0),
-		object: Object::Character { index: 0 },
-		coords: Coords::new(1, 1),
-	});
-	level.add_object(LevelObject {
-		id: Id(1),
-		object: Object::Crate { weight: 1 },
-		coords: Coords::new(3, 3),
-	});
-	level.add_object(LevelObject {
-		id: Id(2),
-		object: Object::Crate { weight: 1 },
-		coords: Coords::new(3, 4),
-	});
-	level.add_object(LevelObject {
-		id: Id(3),
-		object: Object::Crate { weight: 1 },
-		coords: Coords::new(3, 5),
-	});
-	level.add_object(LevelObject {
-		id: Id(4),
-		object: Object::Character { index: 1 },
-		coords: Coords::new(1, 3),
-	});
+
+	let mut id = Id(0);
+	let mut add_object = |object: Object, coords: Coords| {
+		level.add_object(LevelObject { id, object, coords });
+		id.0 += 1;
+	};
+
+	// Add characters.
+	for idx in 0..3 {
+		add_object(Object::Character { idx }, Coords::new(1 + idx as i32, 2));
+	}
+
+	// Add three wooden crates.
+	for row in 4..7 {
+		add_object(Object::WoodenCrate, Coords::new(row, 2));
+	}
+	// Add two steel crates.
+	for row in 4..6 {
+		add_object(Object::SteelCrate, Coords::new(row, 3));
+	}
+	// Add one stone block.
+	add_object(Object::StoneBlock, Coords::new(4, 4));
+
 	level
 }

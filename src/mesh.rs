@@ -3,7 +3,6 @@ use bevy::prelude::*;
 #[derive(Resource)]
 pub struct Meshes {
 	pub character: Handle<Mesh>,
-	pub block: Handle<Mesh>,
 }
 
 impl Meshes {
@@ -16,7 +15,6 @@ impl Meshes {
 				})
 				.unwrap(),
 			),
-			block: mesh_assets.add(Mesh::from(shape::Cube { size: 1.0 })),
 		}
 	}
 }
