@@ -1,4 +1,5 @@
 use std::{
+	fmt::{Debug, Write},
 	ops::{Add, AddAssign, Mul, Neg},
 	sync::Arc,
 };
@@ -111,7 +112,7 @@ impl Add<Offset> for Coords {
 }
 
 /// A level tile.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tile {
 	Floor,
 	Wall,
@@ -122,7 +123,7 @@ pub enum Tile {
 pub struct Id(pub u32);
 
 /// Something that can be moved around a level.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Object {
 	Character { idx: usize },
 	WoodenCrate,
@@ -157,6 +158,7 @@ pub struct Level {
 	objects_by_id: HashMap<Id, LevelObject>,
 	object_ids_by_coords: HashMap<Coords, Id>,
 	character_ids: Vec<Id>,
+	next_object_id: Id,
 	/// History of the level's state, for seeking backward and forward in time.
 	history: Vec<BiChange>,
 	turn: usize,
@@ -176,6 +178,14 @@ impl Level {
 	/// The tile at `coords`.
 	pub fn tile(&self, coords: Coords) -> Tile {
 		self.tiles[coords.row as usize * self.width + coords.col as usize]
+	}
+
+	/// The object at `coords`, if any.
+	pub fn object(&self, coords: Coords) -> Option<Object> {
+		self.object_ids_by_coords
+			.get(&coords)
+			.and_then(|id| self.objects_by_id.get(id))
+			.map(|level_object| level_object.object)
 	}
 
 	/// Iterates over all objects in the level.
@@ -434,14 +444,73 @@ impl Level {
 		Move { from, to }
 	}
 
-	/// Adds `level_object` to the level.
-	fn add_object(&mut self, level_object: LevelObject) {
+	/// Adds `object` to the level at `coords`.
+	fn add_object(&mut self, object: Object, coords: Coords) {
+		let level_object = LevelObject {
+			id: self.next_object_id,
+			object,
+			coords,
+		};
+		self.next_object_id.0 += 1;
+
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
 		if let Object::Character { .. } = level_object.object {
 			self.character_ids.push(level_object.id);
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
+	}
+}
+
+impl PartialEq<Level> for Level {
+	/// Two levels are considered equal if they have the same tiles and objects.
+	fn eq(&self, other: &Level) -> bool {
+		self.width == other.width
+			&& self.tiles == other.tiles
+			&& (0..self.height).all(|row| {
+				(0..self.width).all(|col| {
+					let coords = Coords::new(row as i32, col as i32);
+					self.object(coords) == other.object(coords)
+				})
+			})
+	}
+}
+
+impl Debug for Level {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "Level:")?;
+		for row in 0..self.height {
+			write!(f, "\n  ")?;
+			for col in 0..self.width {
+				let coords = Coords::new(row as i32, col as i32);
+				let tile = self.tile(coords);
+				let object = self.object(coords);
+				f.write_char(match tile {
+					Tile::Floor => '.',
+					Tile::Wall => '#',
+				})?;
+				f.write_char(match object {
+					Some(Object::Character { idx }) => match idx {
+						0 => '0',
+						1 => '1',
+						2 => '2',
+						3 => '3',
+						4 => '4',
+						5 => '5',
+						6 => '6',
+						7 => '7',
+						8 => '8',
+						9 => '9',
+						_ => '?',
+					},
+					Some(Object::WoodenCrate) => 'X',
+					Some(Object::SteelCrate) => 'Y',
+					Some(Object::StoneBlock) => 'Z',
+					None => ' ',
+				})?;
+			}
+		}
+		Ok(())
 	}
 }
 
@@ -465,6 +534,18 @@ impl Move {
 #[derive(Clone)]
 pub struct Change {
 	pub moves: HashMap<Id, Move>,
+}
+
+impl Change {
+	fn reversed(&self) -> Change {
+		Change {
+			moves: self
+				.moves
+				.iter()
+				.map(|(id, mv)| (*id, mv.reversed()))
+				.collect(),
+		}
+	}
 }
 
 /// A connected line of pushers and passive objects, for use in the resolution
@@ -548,66 +629,125 @@ struct BiChange {
 	reverse: Arc<Change>,
 }
 
-impl Change {
-	fn reversed(&self) -> Change {
-		Change {
-			moves: self
-				.moves
-				.iter()
-				.map(|(id, mv)| (*id, mv.reversed()))
-				.collect(),
-		}
-	}
+/// Makes a fresh copy of a simple test level.
+pub fn test_level() -> Level {
+	make_level(
+		r#"# # # # # # # # # 
+		   # . .0. . . . . # 
+		   # . .1. . . . . # 
+		   # . .2. . . . . # 
+		   # . .X.Y.Z. . . # 
+		   # . .X.Y. . . . # 
+		   # . .X. . . . . # 
+		   # . . . . . . . # 
+		   # # # # # # # # # "#,
+	)
 }
 
-pub fn test_level() -> Level {
-	let (width, height) = (9, 9);
-	let mut tiles = Vec::with_capacity(width * height);
-	for row in 0..height {
-		for col in 0..width {
-			let tile = if row == 0
-				|| row == height - 1
-				|| col == 0 || col == width - 1
-			{
-				Tile::Wall
-			} else {
-				Tile::Floor
-			};
-			tiles.push(tile)
+/// Makes a test level from a string. Each line is a level row, alternating
+/// between tiles and objects. Leading whitespace and blank lines are ignored.
+fn make_level(map: &str) -> Level {
+	let (mut width, mut height) = (0, 0);
+	let mut tiles = Vec::new();
+	let mut object_coords = Vec::new();
+	for (row, line) in map
+		.lines()
+		.map(|line| line.trim_start())
+		.filter(|line| !line.is_empty())
+		.enumerate()
+	{
+		height = height.max(row + 1);
+		for (col, tile_object) in line.as_bytes().chunks_exact(2).enumerate() {
+			width = width.max(col + 1);
+			let (tile, object) = (tile_object[0], tile_object[1]);
+			tiles.push(match tile {
+				b'#' => Tile::Wall,
+				_ => Tile::Floor,
+			});
+			if let Some(object) = match object {
+				b'0' => Some(Object::Character { idx: 0 }),
+				b'1' => Some(Object::Character { idx: 1 }),
+				b'2' => Some(Object::Character { idx: 2 }),
+				b'X' => Some(Object::WoodenCrate),
+				b'Y' => Some(Object::SteelCrate),
+				b'Z' => Some(Object::StoneBlock),
+				_ => None,
+			} {
+				object_coords
+					.push((object, Coords::new(row as i32, col as i32)));
+			}
 		}
 	}
 	let mut level = Level {
 		width,
 		height,
 		tiles,
-		object_ids_by_coords: HashMap::new(),
 		objects_by_id: HashMap::new(),
+		object_ids_by_coords: HashMap::new(),
+		character_ids: Vec::new(),
+		next_object_id: Id(0),
 		history: Vec::new(),
 		turn: 0,
-		character_ids: Vec::new(),
 	};
-
-	let mut id = Id(0);
-	let mut add_object = |object: Object, coords: Coords| {
-		level.add_object(LevelObject { id, object, coords });
-		id.0 += 1;
-	};
-
-	// Add characters.
-	for idx in 0..3 {
-		add_object(Object::Character { idx }, Coords::new(1 + idx as i32, 2));
+	for (object, coords) in object_coords {
+		level.add_object(object, coords);
 	}
-
-	// Add three wooden crates.
-	for row in 4..7 {
-		add_object(Object::WoodenCrate, Coords::new(row, 2));
-	}
-	// Add two steel crates.
-	for row in 4..6 {
-		add_object(Object::SteelCrate, Coords::new(row, 3));
-	}
-	// Add one stone block.
-	add_object(Object::StoneBlock, Coords::new(4, 4));
-
 	level
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// Performs `actions` on `level`. The number of actions should match the
+	/// number of characters in the level. Actions will be performed in
+	/// character index order.
+	fn perform(level: &mut Level, actions: &[Action]) {
+		let mut pending_actions = PendingActions::new();
+		for (id, action) in level.character_ids().iter().zip(actions.iter()) {
+			pending_actions.push_back((*id, *action));
+		}
+		level.update(&pending_actions);
+	}
+
+	#[test]
+	fn one_can_push_wooden_crate() {
+		let mut actual = make_level(".0.X. ");
+		perform(&mut actual, &[Action::Push(Offset::RIGHT)]);
+		let expected = make_level(". .0.X");
+		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn one_cannot_push_steel_crate() {
+		let mut actual = make_level(".0.Y. ");
+		perform(&mut actual, &[Action::Push(Offset::RIGHT)]);
+		let expected = make_level(".0.Y. ");
+		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn two_can_push_steel_crate() {
+		let mut actual = make_level(".0.1.Y. ");
+		perform(&mut actual, &[Action::Push(Offset::RIGHT); 2]);
+		let expected = make_level(". .0.1.Y");
+		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn orthogonal_pusher_blocks() {
+		let mut actual = make_level(
+			r#".0.1
+			   # # "#,
+		);
+		perform(
+			&mut actual,
+			&[Action::Push(Offset::RIGHT), Action::Push(Offset::DOWN)],
+		);
+		let expected = make_level(
+			r#".0.1
+			   # # "#,
+		);
+		assert_eq!(actual, expected);
+	}
 }

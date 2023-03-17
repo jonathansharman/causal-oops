@@ -5,6 +5,7 @@ use bevy::prelude::*;
 use crate::level::{Id, Offset};
 
 /// An action that can be performed by a character.
+#[derive(Clone, Copy)]
 pub enum Action {
 	Wait,
 	Push(Offset),
