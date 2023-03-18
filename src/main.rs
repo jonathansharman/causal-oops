@@ -164,12 +164,14 @@ fn control(
 ) {
 	if input.just_pressed(KeyCode::Z) {
 		if let Some(change) = level.undo() {
+			pending_actions.clear();
 			animate(commands, &change, animation_query);
 			return;
 		}
 	}
 	if input.just_pressed(KeyCode::X) {
 		if let Some(change) = level.redo() {
+			pending_actions.clear();
 			animate(commands, &change, animation_query);
 			return;
 		}
