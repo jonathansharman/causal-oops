@@ -31,7 +31,7 @@ impl From<Coords> for Transform {
 }
 
 /// Row-column offset from [`Coords`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Offset {
 	pub row: i32,
 	pub col: i32,
@@ -217,7 +217,7 @@ impl Level {
 		// be maximal; i.e. some teams may be subsumed by larger ones.
 		let mut teams: HashMap<Coords, Team> = pushers
 			.iter()
-			.filter_map(|(id, &offset)| {
+			.map(|(id, &offset)| {
 				let pusher = &self.objects_by_id[id];
 				// The team starts with just the backmost pusher.
 				let mut team = Team {
@@ -225,13 +225,24 @@ impl Level {
 					offset,
 					count: 1,
 					strength: 1,
+					blocked: false,
 				};
 				// Consider tiles in the direction of the backmost pusher.
 				let mut coords = pusher.coords + offset;
 				loop {
-					// Nullify teams facing a wall.
+					// Block just the starting pusher of teams facing a wall, to
+					// allow non-pushers to be claimed by other teams.
 					if let Tile::Wall = self.tile(coords) {
-						return None;
+						return (
+							pusher.coords,
+							Team {
+								start: pusher.coords,
+								offset,
+								count: 1,
+								strength: -1,
+								blocked: true,
+							},
+						);
 					}
 					// Check for the next object in line.
 					let other_id = self.object_ids_by_coords.get(&coords);
@@ -243,8 +254,17 @@ impl Level {
 							// Contributing; add strength.
 							team.strength += 2;
 						} else if other_offset == -offset {
-							// Opposing; nullify this team.
-							return None;
+							// Opposing: block the starting pusher.
+							return (
+								pusher.coords,
+								Team {
+									start: pusher.coords,
+									offset,
+									count: 1,
+									strength: -1,
+									blocked: true,
+								},
+							);
 						} else {
 							// Part of an orthogonal team - may be able to get
 							// out of the way later.
@@ -256,13 +276,22 @@ impl Level {
 					let other = &self.objects_by_id[other_id].object;
 					team.strength -= other.weight();
 					if team.strength < 0 {
-						return None;
+						return (
+							pusher.coords,
+							Team {
+								start: pusher.coords,
+								offset,
+								count: 1,
+								strength: -1,
+								blocked: true,
+							},
+						);
 					}
 					// Welcome to the team.
 					team.count += 1;
 					coords += offset;
 				}
-				Some((pusher.coords, team))
+				(pusher.coords, team)
 			})
 			.collect();
 
@@ -300,7 +329,7 @@ impl Level {
 		let mut stay_move_collisions = HashMap::new();
 		let mut move_stay_collisions = HashMap::new();
 		let mut move_move_collisions = HashMap::new();
-		let mut blocked_teams = HashSet::new();
+		let mut move_colliders = Vec::new();
 		for team in teams.values() {
 			let team_moved = team.moved();
 			for other in teams.values() {
@@ -309,33 +338,36 @@ impl Level {
 					stay_move_collisions
 						.entry(team.start)
 						.or_insert(HashSet::new())
-						.insert(other.start);
+						.insert(*other);
 				}
 				let move_stay = team_moved.collides(other);
 				if move_stay {
 					move_stay_collisions
 						.entry(team.start)
 						.or_insert(HashSet::new())
-						.insert(other.start);
+						.insert(*other);
 				}
 				if team_moved.collides(&other_moved) {
 					move_move_collisions
 						.entry(team.start)
 						.or_insert(HashSet::new())
-						.insert(other.start);
+						.insert(*other);
 					if move_stay {
-						// This team is in collision if it moves.
-						blocked_teams.insert(team.start);
+						move_colliders.push(team.start);
 					}
 				}
 			}
+		}
+		// Block teams that, regardless of what other teams do, collide on move.
+		for team_start in move_colliders {
+			teams.get_mut(&team_start).unwrap().blocked = true;
 		}
 
 		// Visit each team in order of increasing priority, resolving collisions
 		// by marking teams as blocked (unable to move). This tends to give the
 		// right-of-way to stronger teams.
 		for team in sorted_teams {
-			if blocked_teams.contains(&team.start) {
+			if team.blocked {
 				// This team was already blocked; nothing more to do.
 				continue;
 			}
@@ -346,25 +378,26 @@ impl Level {
 			// unblocked team. These other teams could become blocked later, so
 			// this algorithm may not always block the fewest possible teams.
 			if let Some(others) = move_move_collisions.get(&team.start) {
-				if others.iter().any(|other| !blocked_teams.contains(other)) {
-					block_queue = vec![team.start];
+				if others.iter().any(|other| !teams[&other.start].blocked) {
+					block_queue = vec![team];
 				}
 			}
 			// Block this team if moving it causes a collision with a blocked
 			// team.
 			if let Some(others) = move_stay_collisions.get(&team.start) {
-				if others.iter().any(|other| blocked_teams.contains(other)) {
-					block_queue = vec![team.start];
+				if others.iter().any(|other| teams[&other.start].blocked) {
+					block_queue = vec![team];
 				}
 			}
 			// Iteratively block teams as needed.
-			while let Some(team_start) = block_queue.pop() {
-				if !blocked_teams.insert(team_start) {
+			while let Some(team) = block_queue.pop() {
+				if team.blocked {
 					// This team was already blocked; nothing more to do.
 					continue;
 				}
+				teams.get_mut(&team.start).unwrap().blocked = true;
 				// Blocking this team may block other teams, and so on.
-				if let Some(others) = stay_move_collisions.get(&team_start) {
+				if let Some(others) = stay_move_collisions.get(&team.start) {
 					block_queue.extend(others);
 				}
 			}
@@ -372,10 +405,7 @@ impl Level {
 
 		// Move the objects in unblocked teams.
 		let mut moves = HashMap::new();
-		for team in teams
-			.values()
-			.filter(|team| !blocked_teams.contains(&team.start))
-		{
+		for team in teams.values().filter(|team| !team.blocked) {
 			for coords in team.coords() {
 				let id = self.object_ids_by_coords[&coords];
 				let mv = self.get_move(id, team.offset);
@@ -557,13 +587,14 @@ impl Change {
 
 /// A connected line of pushers and passive objects, for use in the resolution
 /// of simultaneous movement.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct Team {
 	start: Coords,
 	/// The unit offset in the direction of the team.
 	offset: Offset,
 	count: usize,
 	strength: i32,
+	blocked: bool,
 }
 
 impl Team {
