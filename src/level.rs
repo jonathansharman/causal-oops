@@ -193,7 +193,7 @@ impl Level {
 		self.objects_by_id.values()
 	}
 
-	/// IDs of characters in this level, in order of appearance.
+	/// IDs of characters in this level, in character index order.
 	pub fn character_ids(&self) -> &[Id] {
 		&self.character_ids
 	}
@@ -300,6 +300,7 @@ impl Level {
 		let mut stay_move_collisions = HashMap::new();
 		let mut move_stay_collisions = HashMap::new();
 		let mut move_move_collisions = HashMap::new();
+		let mut blocked_teams = HashSet::new();
 		for team in teams.values() {
 			let team_moved = team.moved();
 			for other in teams.values() {
@@ -310,7 +311,8 @@ impl Level {
 						.or_insert(HashSet::new())
 						.insert(other.start);
 				}
-				if team_moved.collides(other) {
+				let move_stay = team_moved.collides(other);
+				if move_stay {
 					move_stay_collisions
 						.entry(team.start)
 						.or_insert(HashSet::new())
@@ -321,6 +323,10 @@ impl Level {
 						.entry(team.start)
 						.or_insert(HashSet::new())
 						.insert(other.start);
+					if move_stay {
+						// This team is in collision if it moves.
+						blocked_teams.insert(team.start);
+					}
 				}
 			}
 		}
@@ -328,7 +334,6 @@ impl Level {
 		// Visit each team in order of increasing priority, resolving collisions
 		// by marking teams as blocked (unable to move). This tends to give the
 		// right-of-way to stronger teams.
-		let mut blocked_teams = HashSet::new();
 		for team in sorted_teams {
 			if blocked_teams.contains(&team.start) {
 				// This team was already blocked; nothing more to do.
@@ -455,8 +460,10 @@ impl Level {
 
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
-		if let Object::Character { .. } = level_object.object {
-			self.character_ids.push(level_object.id);
+		if let Object::Character { idx } = level_object.object {
+			self.character_ids
+				.resize(self.character_ids.len().max(idx + 1), Id(0));
+			self.character_ids[idx] = level_object.id;
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
 	}
@@ -668,6 +675,13 @@ fn make_level(map: &str) -> Level {
 				b'0' => Some(Object::Character { idx: 0 }),
 				b'1' => Some(Object::Character { idx: 1 }),
 				b'2' => Some(Object::Character { idx: 2 }),
+				b'3' => Some(Object::Character { idx: 3 }),
+				b'4' => Some(Object::Character { idx: 4 }),
+				b'5' => Some(Object::Character { idx: 5 }),
+				b'6' => Some(Object::Character { idx: 6 }),
+				b'7' => Some(Object::Character { idx: 7 }),
+				b'8' => Some(Object::Character { idx: 8 }),
+				b'9' => Some(Object::Character { idx: 9 }),
 				b'X' => Some(Object::WoodenCrate),
 				b'Y' => Some(Object::SteelCrate),
 				b'Z' => Some(Object::StoneBlock),
@@ -699,55 +713,240 @@ fn make_level(map: &str) -> Level {
 mod tests {
 	use super::*;
 
+	const U: Action = Action::Push(Offset::UP);
+	const D: Action = Action::Push(Offset::DOWN);
+	const L: Action = Action::Push(Offset::LEFT);
+	const R: Action = Action::Push(Offset::RIGHT);
+	const Z: Action = Action::Wait;
+
 	/// Performs `actions` on `level`. The number of actions should match the
 	/// number of characters in the level. Actions will be performed in
 	/// character index order.
-	fn perform(level: &mut Level, actions: &[Action]) {
+	fn perform<const N: usize>(level: &mut Level, actions: [Action; N]) {
 		let mut pending_actions = PendingActions::new();
-		for (id, action) in level.character_ids().iter().zip(actions.iter()) {
-			pending_actions.push_back((*id, *action));
+		for (id, action) in level.character_ids().iter().zip(actions) {
+			pending_actions.push_back((*id, action));
 		}
 		level.update(&pending_actions);
 	}
 
+	/// Performs `actions` on `start` and asserts the result is equal to `end`.
+	fn test<const N: usize>(actions: [Action; N], start: &str, end: &str) {
+		let mut actual = make_level(start);
+		perform(&mut actual, actions);
+		let expected = make_level(end);
+		assert_eq!(actual, expected);
+	}
+
+	// Push strength
+
 	#[test]
 	fn one_can_push_wooden_crate() {
-		let mut actual = make_level(".0.X. ");
-		perform(&mut actual, &[Action::Push(Offset::RIGHT)]);
-		let expected = make_level(". .0.X");
-		assert_eq!(actual, expected);
+		test([R], ".0.X. ", ". .0.X");
+	}
+
+	#[test]
+	fn one_can_push_passive_character() {
+		test([R, Z], ".0.1. ", ". .0.1");
+	}
+
+	#[test]
+	fn one_cannot_push_two_wooden_crates() {
+		test([R], ".0.X.X. ", ".0.X.X. ");
+	}
+
+	#[test]
+	fn two_can_push_two_wooden_crates() {
+		test([R, R], ".0.1.X.X. ", ". .0.1.X.X");
 	}
 
 	#[test]
 	fn one_cannot_push_steel_crate() {
-		let mut actual = make_level(".0.Y. ");
-		perform(&mut actual, &[Action::Push(Offset::RIGHT)]);
-		let expected = make_level(".0.Y. ");
-		assert_eq!(actual, expected);
+		test([R], ".0.Y. ", ".0.Y. ");
 	}
 
 	#[test]
 	fn two_can_push_steel_crate() {
-		let mut actual = make_level(".0.1.Y. ");
-		perform(&mut actual, &[Action::Push(Offset::RIGHT); 2]);
-		let expected = make_level(". .0.1.Y");
-		assert_eq!(actual, expected);
+		test([R, R], ".0.1.Y. ", ". .0.1.Y");
+	}
+
+	// Blocking
+
+	#[test]
+	fn opposing_teams_block() {
+		test([R, R, L], r#".0.1.2"#, r#".0.1.2"#);
 	}
 
 	#[test]
-	fn orthogonal_pusher_blocks() {
-		let mut actual = make_level(
+	fn orthogonal_team_blocks() {
+		// Although the rightward team is stronger, it's blocked regardless of
+		// whether the downward team moves.
+		test(
+			[D, D, R, R, R],
+			r#". . . .0. 
+			   .2.3.4.1. 
+			   . . . . . "#,
+			r#". . . . . 
+			   .2.3.4.0. 
+			   . . . .1. "#,
+		);
+	}
+
+	#[test]
+	fn blocked_orthogonal_pusher_blocks() {
+		test(
+			[R, D],
 			r#".0.1
-			   # # "#,
-		);
-		perform(
-			&mut actual,
-			&[Action::Push(Offset::RIGHT), Action::Push(Offset::DOWN)],
-		);
-		let expected = make_level(
+			   . # "#,
 			r#".0.1
-			   # # "#,
+			   . # "#,
 		);
-		assert_eq!(actual, expected);
+	}
+
+	#[test]
+	fn loops_do_not_block() {
+		test(
+			[R, D, L, U],
+			r#".0.1
+			   .3.2"#,
+			r#".3.0
+			   .2.1"#,
+		);
+	}
+
+	// Broken teams
+
+	#[test]
+	fn strong_cuts_weak() {
+		// Down normally cuts right, but the rightward team is stronger.
+		test(
+			[D, R, R],
+			r#". . .0. 
+			   .1.2.X. 
+			   . . . . "#,
+			r#". . .0. 
+			   . .1.2.X
+			   . . . . "#,
+		);
+	}
+
+	#[test]
+	fn can_steal_from_blocked_team() {
+		// With 0 blocked, the crate unambiguously belongs to 1's team.
+		test(
+			[D, R],
+			r#". .0. 
+			   .1.X. 
+			   . # . "#,
+			r#". .0. 
+			   . .1.X
+			   . # . "#,
+		);
+	}
+
+	#[test]
+	fn strong_uncut_subteam_continues_on() {
+		// 3 has enough strength by itself to push the crate.
+		test(
+			[D, D, R, R],
+			r#". .0. . . 
+			   .2.X.3.X. 
+			   . .1. . . 
+			   . .X. . . 
+			   . . . . . "#,
+			r#". . . . . 
+			   .2.0. .3.X
+			   . .X. . . 
+			   . .1. . . 
+			   . .X. . . "#,
+		);
+	}
+
+	#[test]
+	fn weak_uncut_subteam_is_blocked() {
+		// With 3 and 4 blocked, 5 can't push two crates.
+		test(
+			[D, D, D, R, R, R],
+			r#". . .0. . . 
+			   . . .1. . . 
+			   .3.4.X.5.X.X
+			   . . .2. . . 
+			   . . .X. . . 
+			   . . .X. . . 
+			   . . . . . . "#,
+			r#". . . . . . 
+			   . . .0. . . 
+			   .3.4.1.5.X.X
+			   . . .X. . . 
+			   . . .2. . . 
+			   . . .X. . . 
+			   . . .X. . . "#,
+		);
+	}
+
+	// Collision resolution
+
+	#[test]
+	fn down_beats_right_left_up() {
+		test(
+			[D, U],
+			r#".0
+			   . 
+			   .1"#,
+			r#". 
+			   .0
+			   .1"#,
+		);
+		test(
+			[D, R],
+			r#". .0
+			   .1. "#,
+			r#". . 
+			   .1.0"#,
+		);
+		test(
+			[D, L],
+			r#".0. 
+			   . .1"#,
+			r#". . 
+			   .0.1"#,
+		);
+	}
+
+	#[test]
+	fn right_beats_left_up() {
+		test(
+			[R, U],
+			r#".0. 
+			   . .1"#,
+			r#". .0
+			   . .1"#,
+		);
+		test([R, L], r#".0. .1"#, r#". .0.1"#);
+	}
+
+	#[test]
+	fn left_beats_up() {
+		test(
+			[L, U],
+			r#". .0
+			   .1. "#,
+			r#".0. 
+			   .1. "#,
+		);
+	}
+
+	#[test]
+	fn strong_blocks_weak() {
+		// Down normally beats right, but the rightward team is stronger.
+		test(
+			[D, R],
+			r#". .0
+			   . .X
+			   .1. "#,
+			r#". .0
+			   . .X
+			   . .1"#,
+		);
 	}
 }
