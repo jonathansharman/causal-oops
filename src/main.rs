@@ -1,26 +1,32 @@
-use std::time::Duration;
+use std::sync::Arc;
 
 use bevy::prelude::*;
-use bevy_easings::{Ease, EaseFunction, EasingType, EasingsPlugin};
+use bevy_easings::EasingsPlugin;
 
-use action::{Action, PendingActions};
-use level::{Change, Coords, Level, Object, Offset, Tile};
+use control::{Action, CharacterActions, Turn};
+use level::{Change, Coords, Level, Object, Tile};
 use material::Materials;
 use mesh::Meshes;
 use models::Models;
+use update::CharacterAbilities;
 
-mod action;
 mod animation;
+mod control;
 mod level;
 mod material;
 mod mesh;
 mod models;
-mod state;
+mod update;
 
 fn main() {
 	App::new()
 		.add_startup_system(setup)
-		.add_system(control)
+		.add_systems(
+			(control::control, update::update, animation::animate).chain(),
+		)
+		.add_event::<Action>()
+		.add_event::<Turn>()
+		.add_event::<Arc<Change>>()
 		.insert_resource(ClearColor(Color::BLACK))
 		.add_plugins(DefaultPlugins.set(WindowPlugin {
 			primary_window: Some(Window {
@@ -117,15 +123,16 @@ fn setup(
 	let meshes = Meshes::load(&mut mesh_assets);
 	let materials = Materials::load(&mut material_assets);
 
-	// Create level.
+	// Create and spawn level.
 	let level = level::test_level();
+	commands
+		.insert_resource(CharacterAbilities::new(level.character_abilities()));
+	commands.insert_resource(CharacterActions::new());
 	spawn_level(&mut commands, &models, &meshes, &materials, &level);
 
 	// Insert mesh and material resources.
 	commands.insert_resource(meshes);
 	commands.insert_resource(materials);
-
-	commands.insert_resource(PendingActions::new());
 
 	// Add static camera overlooking the level.
 	let center_x = (level.width() as f32 - 1.0) / 2.0;
@@ -153,73 +160,4 @@ fn setup(
 
 	// Insert level resource.
 	commands.insert_resource(level);
-}
-
-fn control(
-	commands: Commands,
-	input: Res<Input<KeyCode>>,
-	mut level: ResMut<Level>,
-	mut pending_actions: ResMut<PendingActions>,
-	animation_query: Query<(Entity, &Transform, &animation::Object)>,
-) {
-	if input.just_pressed(KeyCode::Z) {
-		if let Some(change) = level.undo() {
-			pending_actions.clear();
-			animate(commands, &change, animation_query);
-			return;
-		}
-	}
-	if input.just_pressed(KeyCode::X) {
-		if let Some(change) = level.redo() {
-			pending_actions.clear();
-			animate(commands, &change, animation_query);
-			return;
-		}
-	}
-
-	let action = if input.just_pressed(KeyCode::Space) {
-		Some(Action::Wait)
-	} else if input.just_pressed(KeyCode::Left) {
-		Some(Action::Push(Offset::LEFT))
-	} else if input.just_pressed(KeyCode::Right) {
-		Some(Action::Push(Offset::RIGHT))
-	} else if input.just_pressed(KeyCode::Up) {
-		Some(Action::Push(Offset::UP))
-	} else if input.just_pressed(KeyCode::Down) {
-		Some(Action::Push(Offset::DOWN))
-	} else {
-		None
-	};
-
-	if let Some(action) = action {
-		if let Some(id) = level.character_ids().get(pending_actions.len()) {
-			pending_actions.push_back((*id, action));
-			if pending_actions.len() == level.character_ids().len() {
-				// All characters have been assigned moves. Execute turn.
-				let change = level.update(&pending_actions);
-				pending_actions.clear();
-				animate(commands, &change, animation_query);
-			}
-		}
-	}
-}
-
-const ANIMATION_DURATION: Duration = Duration::from_millis(200);
-
-fn animate(
-	mut commands: Commands,
-	change: &Change,
-	animation_query: Query<(Entity, &Transform, &animation::Object)>,
-) {
-	// Apply movements.
-	for (entity, from, object) in &animation_query {
-		let Some(mv) = change.moves.get(&object.id) else { continue };
-		commands.entity(entity).insert(from.ease_to(
-			Transform::from(mv.to),
-			EaseFunction::CubicInOut,
-			EasingType::Once {
-				duration: ANIMATION_DURATION,
-			},
-		));
-	}
 }

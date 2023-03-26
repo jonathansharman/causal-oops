@@ -1,4 +1,5 @@
 use std::{
+	cmp::Ordering,
 	fmt::{Debug, Write},
 	ops::{Add, AddAssign, Mul, Neg},
 	sync::Arc,
@@ -9,7 +10,7 @@ use bevy::{
 	utils::{HashMap, HashSet},
 };
 
-use crate::action::{Action, PendingActions};
+use crate::control::Action;
 
 /// Row-column coordinates on a [`Level`] grid.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -149,6 +150,15 @@ pub struct LevelObject {
 	pub coords: Coords,
 }
 
+/// The set of abilities of a character. Determines what actions the character
+/// can perform during the next turn.
+#[derive(Clone, Copy)]
+pub struct Abilities {
+	pub can_summon: bool,
+	pub can_return: bool,
+	pub can_push: bool,
+}
+
 /// The complete state of a level at a single point in time.
 #[derive(Resource)]
 pub struct Level {
@@ -157,7 +167,7 @@ pub struct Level {
 	tiles: Vec<Tile>,
 	objects_by_id: HashMap<Id, LevelObject>,
 	object_ids_by_coords: HashMap<Coords, Id>,
-	character_ids: Vec<Id>,
+	character_abilities: Vec<(Id, Abilities)>,
 	next_object_id: Id,
 	/// History of the level's state, for seeking backward and forward in time.
 	history: Vec<BiChange>,
@@ -193,20 +203,22 @@ impl Level {
 		self.objects_by_id.values()
 	}
 
-	/// IDs of characters in this level, in character index order.
-	pub fn character_ids(&self) -> &[Id] {
-		&self.character_ids
+	/// Each character's abilities for the next turn.
+	pub fn character_abilities(&self) -> &[(Id, Abilities)] {
+		&self.character_abilities
 	}
 
-	/// Updates the level by executing `pending_actions`, returning the
-	/// resulting (possibly trivial) [`Change`].
-	pub fn update(&mut self, pending_actions: &PendingActions) -> Arc<Change> {
+	/// Updates the level by executing `actions`, returning the resulting
+	/// (possibly trivial) [`Change`].
+	pub fn update(
+		&mut self,
+		actions: impl Iterator<Item = (Id, Action)>,
+	) -> Arc<Change> {
 		// Map pushers to their desired offsets.
-		let pushers: HashMap<Id, Offset> = pending_actions
-			.iter()
+		let pushers: HashMap<Id, Offset> = actions
 			.filter_map(|(id, action)| {
 				if let Action::Push(offset) = action {
-					Some((*id, *offset))
+					Some((id, offset))
 				} else {
 					None
 				}
@@ -490,10 +502,15 @@ impl Level {
 
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
-		if let Object::Character { idx } = level_object.object {
-			self.character_ids
-				.resize(self.character_ids.len().max(idx + 1), Id(0));
-			self.character_ids[idx] = level_object.id;
+		if let Object::Character { .. } = level_object.object {
+			self.character_abilities.push((
+				level_object.id,
+				Abilities {
+					can_summon: true,
+					can_return: true,
+					can_push: true,
+				},
+			));
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
 	}
@@ -723,13 +740,27 @@ fn make_level(map: &str) -> Level {
 			}
 		}
 	}
+	// Ensure characters are added in index order.
+	object_coords.sort_unstable_by(|(o1, c1), (o2, c2)| {
+		match (o1, o2) {
+			(
+				Object::Character { idx: idx1 },
+				Object::Character { idx: idx2 },
+			) => idx1.cmp(idx2),
+			// Put characters before non-characters.
+			(Object::Character { .. }, _) => Ordering::Less,
+			(_, Object::Character { .. }) => Ordering::Greater,
+			// Otherwise, order doesn't matter.
+			_ => c1.row.cmp(&c2.row),
+		}
+	});
 	let mut level = Level {
 		width,
 		height,
 		tiles,
 		objects_by_id: HashMap::new(),
 		object_ids_by_coords: HashMap::new(),
-		character_ids: Vec::new(),
+		character_abilities: Vec::new(),
 		next_object_id: Id(0),
 		history: Vec::new(),
 		turn: 0,
@@ -754,11 +785,13 @@ mod tests {
 	/// number of characters in the level. Actions will be performed in
 	/// character index order.
 	fn perform<const N: usize>(level: &mut Level, actions: [Action; N]) {
-		let mut pending_actions = PendingActions::new();
-		for (id, action) in level.character_ids().iter().zip(actions) {
-			pending_actions.push_back((*id, action));
-		}
-		level.update(&pending_actions);
+		let character_abilities: Vec<_> = level
+			.character_abilities
+			.iter()
+			.map(|(id, _)| *id)
+			.zip(actions)
+			.collect();
+		level.update(character_abilities.into_iter());
 	}
 
 	/// Performs `actions` on `start` and asserts the result is equal to `end`.
