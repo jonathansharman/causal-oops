@@ -3,51 +3,59 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 use crate::{
-	control::Turn,
+	control::{Action, ControlEvent},
 	level::{Abilities, Change, Id, Level},
 };
 
-/// Each character's abilities for the next turn.
-#[derive(Resource, Deref, DerefMut)]
-pub struct CharacterAbilities(Vec<(Id, Abilities)>);
+/// The ID and abilities of the next character to act.
+#[derive(Clone, Copy)]
+pub struct NextActor {
+	pub id: Id,
+	pub abilities: Abilities,
+}
 
-impl CharacterAbilities {
-	pub fn new(
-		abilities: impl Into<Vec<(Id, Abilities)>>,
-	) -> CharacterAbilities {
-		CharacterAbilities(abilities.into())
-	}
+/// Local state for the update system, to store queued actions.
+#[derive(Default)]
+pub struct UpdateState {
+	/// Each character's queued action for the next turn.
+	queue: Vec<(Id, Action)>,
 }
 
 /// Consumes control events to update the level and produces change events.
 pub fn update(
+	mut state: Local<UpdateState>,
 	mut level: ResMut<Level>,
-	mut turn_events: EventReader<Turn>,
-	mut character_abilities: ResMut<CharacterAbilities>,
+	mut control_events: EventReader<ControlEvent>,
+	mut next_actors: EventWriter<NextActor>,
 	mut change_events: EventWriter<Arc<Change>>,
 ) {
-	for turn in turn_events.into_iter() {
-		match turn {
-			Turn::Act(actions) => {
-				let change = level.update(actions.iter().copied());
-				*character_abilities =
-					CharacterAbilities::new(level.character_abilities());
-				change_events.send(change);
-			}
-			Turn::Undo => {
-				if let Some(change) = level.undo() {
-					*character_abilities =
-						CharacterAbilities::new(level.character_abilities());
+	for control_event in control_events.iter() {
+		match control_event {
+			ControlEvent::Act(character_action) => {
+				state.queue.push(*character_action);
+				// If all characters have queued actions, execute the turn.
+				if state.queue.len() == level.character_abilities().len() {
+					let actions = Vec::from_iter(state.queue.drain(..));
+
+					let change = level.update(actions.iter().copied());
 					change_events.send(change);
 				}
 			}
-			Turn::Redo => {
+			ControlEvent::Undo => {
+				if let Some(change) = level.undo() {
+					state.queue.clear();
+					change_events.send(change);
+				}
+			}
+			ControlEvent::Redo => {
 				if let Some(change) = level.redo() {
-					*character_abilities =
-						CharacterAbilities::new(level.character_abilities());
+					state.queue.clear();
 					change_events.send(change);
 				}
 			}
 		}
+		// Send the next actor to the control and animation systems.
+		let (id, abilities) = level.character_abilities()[state.queue.len()];
+		next_actors.send(NextActor { id, abilities });
 	}
 }

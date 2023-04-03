@@ -47,6 +47,14 @@ impl Offset {
 	pub const fn new(row: i32, col: i32) -> Offset {
 		Offset { row, col }
 	}
+
+	/// Rotational transform from the angle formed by `self`.
+	pub fn transform(&self) -> Transform {
+		Transform::from_rotation(Quat::from_rotation_y(f32::atan2(
+			-self.row as f32,
+			self.col as f32,
+		)))
+	}
 }
 
 impl Ord for Offset {
@@ -208,14 +216,14 @@ impl Level {
 		&self.character_abilities
 	}
 
-	/// Updates the level by executing `actions`, returning the resulting
-	/// (possibly trivial) [`Change`].
+	/// Updates the level by executing `character_actions`, returning the
+	/// resulting (possibly trivial) [`Change`].
 	pub fn update(
 		&mut self,
-		actions: impl Iterator<Item = (Id, Action)>,
+		character_actions: impl Iterator<Item = (Id, Action)>,
 	) -> Arc<Change> {
 		// Map pushers to their desired offsets.
-		let pushers: HashMap<Id, Offset> = actions
+		let pushers: HashMap<Id, Offset> = character_actions
 			.filter_map(|(id, action)| {
 				if let Action::Push(offset) = action {
 					Some((id, offset))
@@ -788,8 +796,8 @@ mod tests {
 		let character_abilities: Vec<_> = level
 			.character_abilities
 			.iter()
-			.map(|(id, _)| *id)
 			.zip(actions)
+			.map(|((id, _), action)| (*id, action))
 			.collect();
 		level.update(character_abilities.into_iter());
 	}

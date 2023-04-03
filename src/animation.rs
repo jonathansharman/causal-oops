@@ -1,11 +1,14 @@
-use std::{sync::Arc, time::Duration};
+use std::{ops::Mul, sync::Arc, time::Duration};
 
-use bevy::prelude::*;
+use bevy::{pbr::NotShadowCaster, prelude::*};
 use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
-	control::{Action, Turn},
+	control::{Action, ControlEvent},
 	level::{Change, Id},
+	materials::Materials,
+	models::Models,
+	update::NextActor,
 };
 
 /// Animates an object in a level.
@@ -14,30 +17,104 @@ pub struct Object {
 	pub id: Id,
 }
 
+#[derive(Component)]
+pub struct ChoosingIndicator;
+
+#[derive(Component)]
+pub struct ChoiceIndicator;
+
+/// Add indicators for pending actions and next actor.
+pub fn add_indicators(
+	mut commands: Commands,
+	models: Res<Models>,
+	materials: Res<Materials>,
+	mut next_actors: EventReader<NextActor>,
+	mut control_events: EventReader<ControlEvent>,
+	query: Query<(Entity, &Object, &Transform)>,
+	choosing_query: Query<Entity, With<ChoosingIndicator>>,
+) {
+	for NextActor { id, .. } in next_actors.iter() {
+		for entity in &choosing_query {
+			commands.entity(entity).despawn();
+		}
+		let entity = query
+			.iter()
+			.find_map(|(entity, object, _)| {
+				(object.id == *id).then_some(entity)
+			})
+			.unwrap();
+		let transform = Transform::from_translation(0.5 * Vec3::Y)
+			.with_scale(Vec3::new(0.5, 0.5, 0.5));
+		let indicator = commands
+			.spawn((
+				PbrBundle {
+					mesh: models.question_mesh.clone(),
+					material: materials.indicator.clone(),
+					transform,
+					..default()
+				},
+				NotShadowCaster,
+				ChoosingIndicator,
+			))
+			.id();
+		commands.entity(entity).add_child(indicator);
+	}
+
+	for control_event in control_events.iter() {
+		let ControlEvent::Act((id, action)) = control_event else { continue };
+
+		let transform = query
+			.iter()
+			.find_map(|(_, object, transform)| {
+				(object.id == *id).then_some(transform)
+			})
+			.unwrap()
+			.mul_transform(Transform::from_translation(0.5 * Vec3::Y))
+			.with_scale(Vec3::new(0.3, 0.3, 0.3));
+
+		let (mesh, transform) = match action {
+			Action::Wait => (models.arrow_mesh.clone(), transform),
+			Action::Push(offset) => {
+				(models.arrow_mesh.clone(), transform.mul(offset.transform()))
+			}
+			Action::Summon(offset) => {
+				(models.arrow_mesh.clone(), transform.mul(offset.transform()))
+			}
+			Action::Return => (models.arrow_mesh.clone(), transform),
+		};
+		commands.spawn((
+			PbrBundle {
+				mesh,
+				material: materials.indicator.clone(),
+				transform,
+				..default()
+			},
+			NotShadowCaster,
+			ChoiceIndicator,
+		));
+	}
+}
+
+/// Remove indicators between turns.
+pub fn clear_indicators(
+	mut commands: Commands,
+	change_events: EventReader<Arc<Change>>,
+	choice_query: Query<Entity, With<ChoiceIndicator>>,
+) {
+	if !change_events.is_empty() {
+		for entity in &choice_query {
+			commands.entity(entity).despawn();
+		}
+	}
+}
+
 const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
 pub fn animate(
 	mut commands: Commands,
-	mut action_events: EventReader<Action>,
-	mut turn_events: EventReader<Turn>,
 	mut change_events: EventReader<Arc<Change>>,
 	animation_query: Query<(Entity, &Transform, &Object)>,
 ) {
-	// Add pending action indicators when the player queues character actions.
-	for action in action_events.iter() {
-		// TODO: Add pending action indicator.
-		// match action {
-		// 	Action::Wait => todo!(),
-		// 	Action::Push(_) => todo!(),
-		// 	Action::Summon(_) => todo!(),
-		// 	Action::Return => todo!(),
-		// }
-	}
-	// Remove pending action indicators when the player completes a turn.
-	for _ in turn_events.iter() {
-		// TODO: Remove pending action indicators.
-	}
-	// Animate level changes.
 	for change in change_events.iter() {
 		// Apply movements.
 		for (entity, from, object) in &animation_query {

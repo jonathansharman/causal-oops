@@ -3,35 +3,49 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use bevy_easings::EasingsPlugin;
 
-use control::{Action, CharacterActions, Turn};
+use control::ControlEvent;
 use level::{Change, Coords, Level, Object, Tile};
-use material::Materials;
-use mesh::Meshes;
-use models::Models;
-use update::CharacterAbilities;
+use materials::Materials;
+use meshes::Meshes;
+use models::{load_gltf_meshes, Models};
+use states::GameState;
+use update::NextActor;
 
 mod animation;
 mod control;
 mod level;
-mod material;
-mod mesh;
+mod materials;
+mod meshes;
 mod models;
+mod states;
 mod update;
 
 fn main() {
 	App::new()
+		.add_state::<GameState>()
 		.add_startup_system(setup)
+		.add_system(load_gltf_meshes.in_set(OnUpdate(GameState::Loading)))
+		.add_system(create_level.in_set(OnUpdate(GameState::CreatingLevel)))
 		.add_systems(
-			(control::control, update::update, animation::animate).chain(),
+			(
+				control::control,
+				update::update,
+				animation::add_indicators,
+				// Allow indicators to be added/removed in one frame.
+				apply_system_buffers,
+				animation::clear_indicators,
+				animation::animate,
+			)
+				.chain()
+				.in_set(OnUpdate(GameState::Playing)),
 		)
-		.add_event::<Action>()
-		.add_event::<Turn>()
+		.add_event::<NextActor>()
+		.add_event::<ControlEvent>()
 		.add_event::<Arc<Change>>()
 		.insert_resource(ClearColor(Color::BLACK))
 		.add_plugins(DefaultPlugins.set(WindowPlugin {
 			primary_window: Some(Window {
 				title: "Causal Oops".to_string(),
-				resolution: (800.0, 600.0).into(),
 				..default()
 			}),
 			..default()
@@ -112,27 +126,34 @@ fn spawn_level(
 	}
 }
 
+// Loads and inserts models, meshes, and materials.
 fn setup(
 	mut commands: Commands,
 	mut asset_server: ResMut<AssetServer>,
 	mut mesh_assets: ResMut<Assets<Mesh>>,
 	mut material_assets: ResMut<Assets<StandardMaterial>>,
 ) {
-	// Load models, meshes, and materials.
-	let models = Models::load(&mut asset_server);
-	let meshes = Meshes::load(&mut mesh_assets);
-	let materials = Materials::load(&mut material_assets);
+	commands.insert_resource(Models::load(&mut asset_server));
+	commands.insert_resource(Meshes::load(&mut mesh_assets));
+	commands.insert_resource(Materials::load(&mut material_assets));
+}
 
-	// Create and spawn level.
+fn create_level(
+	mut commands: Commands,
+	models: Res<Models>,
+	meshes: Res<Meshes>,
+	materials: Res<Materials>,
+	mut next_actors: EventWriter<NextActor>,
+	mut next_state: ResMut<NextState<GameState>>,
+) {
 	let level = level::test_level();
-	commands
-		.insert_resource(CharacterAbilities::new(level.character_abilities()));
-	commands.insert_resource(CharacterActions::new());
 	spawn_level(&mut commands, &models, &meshes, &materials, &level);
-
-	// Insert mesh and material resources.
-	commands.insert_resource(meshes);
-	commands.insert_resource(materials);
+	// Kick off the control loop by sending the first actor.
+	let (id, abilities) = level.character_abilities().first().unwrap();
+	next_actors.send(NextActor {
+		id: *id,
+		abilities: *abilities,
+	});
 
 	// Add static camera overlooking the level.
 	let center_x = (level.width() as f32 - 1.0) / 2.0;
@@ -160,4 +181,6 @@ fn setup(
 
 	// Insert level resource.
 	commands.insert_resource(level);
+
+	next_state.set(GameState::Playing);
 }

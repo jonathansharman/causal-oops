@@ -8,7 +8,7 @@ use bevy::{
 
 use crate::{
 	level::{Id, Offset},
-	update::CharacterAbilities,
+	update::NextActor,
 };
 
 /// An abstraction over keys and gamepad buttons.
@@ -73,131 +73,121 @@ pub enum Action {
 	Return,
 }
 
-/// Each character's queued action for the next turn.
-#[derive(Resource, Deref, DerefMut)]
-pub struct CharacterActions(Vec<(Id, Action)>);
-
-impl CharacterActions {
-	pub fn new() -> CharacterActions {
-		CharacterActions(Vec::new())
-	}
-}
-
-/// The player's choice for a single turn.
-pub enum Turn {
-	Act(Vec<(Id, Action)>),
+pub enum ControlEvent {
+	Act((Id, Action)),
 	Undo,
 	Redo,
 }
 
-/// Used to handle control events that involve multiple input events, probably
-/// over multiple frames.
+/// Local state for the control system, for handling multi-input/multi-frame
+/// controls.
 #[derive(Default)]
 pub struct ControlState {
+	input_buffer: VecDeque<(GameButton, ButtonState)>,
+	next_actor: Option<NextActor>,
 	summoning: bool,
-	events_buffer: VecDeque<(GameButton, ButtonState)>,
 }
 
 /// Consumes keyboard/gamepad input and produces higher-level control events to
 /// be consumed by the update and animation systems.
 pub fn control(
-	mut keyboard_events: EventReader<KeyboardInput>,
 	mut state: Local<ControlState>,
-	character_abilities: Res<CharacterAbilities>,
-	mut character_actions: ResMut<CharacterActions>,
-	mut action_events: EventWriter<Action>,
-	mut turn_events: EventWriter<Turn>,
+	mut keyboard_events: EventReader<KeyboardInput>,
+	mut next_actors: EventReader<NextActor>,
+	mut control_events: EventWriter<ControlEvent>,
 ) {
-	// TODO: Custom input bindings
+	// TODO: Make this a resource and support custom input bindings.
 	let keybinds = KeyboardBindings::default();
-	// After a full turn has been input, the control system needs to wait a
-	// frame before processing the remaining input events so the update system
-	// can update the level and generate the new list of character abilities.
-	// Therefore, we need to buffer input events.
+	// Buffer inputs so that update and animation systems can run after each
+	// control event.
 	state
-		.events_buffer
+		.input_buffer
 		.extend(keybinds.adapt(&mut keyboard_events));
 
-	while let Some((button, button_state)) = state.events_buffer.pop_front() {
-		// Get the ID and abilities of the next character to act.
-		let (id, abilities) = character_abilities[character_actions.len()];
+	// Set the next actor if there is one. There should be at most one next
+	// actor per frame.
+	if let Some(next_actor) = next_actors.iter().last() {
+		state.next_actor = Some(*next_actor);
+	}
+	// Get the next actor or return if there's no actor to control.
+	let Some(actor) = state.next_actor else { return };
 
-		// Get the next action or else continue/return.
-		let action = match (button, button_state) {
+	let act = |action: Action| -> Option<ControlEvent> {
+		Some(ControlEvent::Act((actor.id, action)))
+	};
+
+	// Consume buffered input until a control event happens.
+	while let Some((button, button_state)) = state.input_buffer.pop_front() {
+		// Get the next control event and/or update internal state.
+		let control_event = match (button, button_state) {
 			(GameButton::Undo, ButtonState::Pressed) => {
-				character_actions.clear();
-				turn_events.send(Turn::Undo);
-				return;
+				Some(ControlEvent::Undo)
 			}
 			(GameButton::Redo, ButtonState::Pressed) => {
-				character_actions.clear();
-				turn_events.send(Turn::Redo);
-				return;
+				Some(ControlEvent::Redo)
 			}
 			(GameButton::Up, ButtonState::Pressed) => {
 				if state.summoning {
-					Action::Summon(Offset::UP)
-				} else if abilities.can_push {
-					Action::Push(Offset::UP)
+					act(Action::Summon(Offset::UP))
+				} else if actor.abilities.can_push {
+					act(Action::Push(Offset::UP))
 				} else {
-					continue;
+					None
 				}
 			}
 			(GameButton::Left, ButtonState::Pressed) => {
 				if state.summoning {
-					Action::Summon(Offset::LEFT)
-				} else if abilities.can_push {
-					Action::Push(Offset::LEFT)
+					act(Action::Summon(Offset::LEFT))
+				} else if actor.abilities.can_push {
+					act(Action::Push(Offset::LEFT))
 				} else {
-					continue;
+					None
 				}
 			}
 			(GameButton::Down, ButtonState::Pressed) => {
 				if state.summoning {
-					Action::Summon(Offset::DOWN)
-				} else if abilities.can_push {
-					Action::Push(Offset::DOWN)
+					act(Action::Summon(Offset::DOWN))
+				} else if actor.abilities.can_push {
+					act(Action::Push(Offset::DOWN))
 				} else {
-					continue;
+					None
 				}
 			}
 			(GameButton::Right, ButtonState::Pressed) => {
 				if state.summoning {
-					Action::Summon(Offset::RIGHT)
-				} else if abilities.can_push {
-					Action::Push(Offset::RIGHT)
+					act(Action::Summon(Offset::RIGHT))
+				} else if actor.abilities.can_push {
+					act(Action::Push(Offset::RIGHT))
 				} else {
-					continue;
+					None
 				}
 			}
-			(GameButton::Wait, ButtonState::Pressed) => Action::Wait,
+			(GameButton::Wait, ButtonState::Pressed) => act(Action::Wait),
 			(GameButton::Act, ButtonState::Pressed) => {
-				// The Act button is contextual. If the next character has the
-				// ability to return, it's the return button. If it has the
-				// ability to summon, it's a modifier button.
-				if abilities.can_return {
-					Action::Return
+				// The Act button is contextual. If the actor has the ability to
+				// return, it's the return button. If it has the ability to
+				// summon, it's a modifier button.
+				if actor.abilities.can_return {
+					act(Action::Return)
 				} else {
-					if abilities.can_summon {
+					if actor.abilities.can_summon {
 						state.summoning = true;
 					}
-					continue;
+					None
 				}
 			}
 			(GameButton::Act, ButtonState::Released) => {
 				state.summoning = false;
-				continue;
+				None
 			}
-			_ => continue,
+			_ => None,
 		};
-		action_events.send(action);
-		character_actions.push((id, action));
-		state.summoning = false;
-
-		// If all characters have queued actions, send the turn.
-		if character_actions.len() == character_abilities.len() {
-			let actions = Vec::from_iter(character_actions.drain(..));
-			turn_events.send(Turn::Act(actions));
+		// If there was a control event, emit it, reset state, and return so
+		// that the update and animation systems can respond.
+		if let Some(control_event) = control_event {
+			state.next_actor = None;
+			state.summoning = false;
+			control_events.send(control_event);
 			return;
 		}
 	}

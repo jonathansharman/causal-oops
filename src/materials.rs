@@ -3,6 +3,7 @@ use bevy::prelude::*;
 #[derive(Resource)]
 pub struct Materials {
 	pub characters: [Handle<StandardMaterial>; 3],
+	pub indicator: Handle<StandardMaterial>,
 }
 
 impl Materials {
@@ -13,6 +14,7 @@ impl Materials {
 				material_assets.add(Color::rgb(0.7, 0.2, 0.2).into()),
 				material_assets.add(Color::rgb(0.2, 0.2, 0.7).into()),
 			],
+			indicator: material_assets.add(Color::WHITE.into()),
 		}
 	}
 }
