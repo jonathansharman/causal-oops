@@ -43,8 +43,7 @@ pub fn add_indicators(
 				(object.id == *id).then_some(entity)
 			})
 			.unwrap();
-		let transform = Transform::from_translation(0.5 * Vec3::Y)
-			.with_scale(Vec3::new(0.5, 0.5, 0.5));
+		let transform = Transform::from_translation(0.5 * Vec3::Y);
 		let indicator = commands
 			.spawn((
 				PbrBundle {
@@ -69,11 +68,10 @@ pub fn add_indicators(
 				(object.id == *id).then_some(transform)
 			})
 			.unwrap()
-			.mul_transform(Transform::from_translation(0.5 * Vec3::Y))
-			.with_scale(Vec3::new(0.3, 0.3, 0.3));
+			.mul_transform(Transform::from_translation(0.5 * Vec3::Y));
 
 		let (mesh, transform) = match action {
-			Action::Wait => (models.arrow_mesh.clone(), transform),
+			Action::Wait => (models.wait_mesh.clone(), transform),
 			Action::Push(offset) => {
 				(models.arrow_mesh.clone(), transform.mul(offset.transform()))
 			}

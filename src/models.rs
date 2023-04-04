@@ -17,6 +17,7 @@ pub struct Models {
 	pub stone_block: Handle<Scene>,
 
 	pub question_mesh: Handle<Mesh>,
+	pub wait_mesh: Handle<Mesh>,
 	pub arrow_mesh: Handle<Mesh>,
 
 	// Used to track which Gltf assets haven't finished loading yet and to
@@ -30,6 +31,9 @@ impl Models {
 		unloaded.insert(asset_server.load("models/question.glb"), |models| {
 			&mut models.question_mesh
 		});
+		unloaded.insert(asset_server.load("models/wait.glb"), |models| {
+			&mut models.wait_mesh
+		});
 		unloaded.insert(asset_server.load("models/arrow.glb"), |models| {
 			&mut models.arrow_mesh
 		});
@@ -42,6 +46,7 @@ impl Models {
 			// Initialize meshes with default handles, which the
 			// load_gltf_meshes system will replace once Gltf assets load.
 			question_mesh: Handle::default(),
+			wait_mesh: Handle::default(),
 			arrow_mesh: Handle::default(),
 			unloaded,
 		}
