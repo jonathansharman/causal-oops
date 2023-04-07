@@ -19,6 +19,8 @@ pub struct Models {
 	pub question_mesh: Handle<Mesh>,
 	pub wait_mesh: Handle<Mesh>,
 	pub arrow_mesh: Handle<Mesh>,
+	pub summon_mesh: Handle<Mesh>,
+	pub return_mesh: Handle<Mesh>,
 
 	// Used to track which Gltf assets haven't finished loading yet and to
 	// determine which mesh their contents should be loaded into.
@@ -37,6 +39,12 @@ impl Models {
 		unloaded.insert(asset_server.load("models/arrow.glb"), |models| {
 			&mut models.arrow_mesh
 		});
+		unloaded.insert(asset_server.load("models/summon.glb"), |models| {
+			&mut models.summon_mesh
+		});
+		unloaded.insert(asset_server.load("models/return.glb"), |models| {
+			&mut models.return_mesh
+		});
 		Self {
 			wall: asset_server.load("models/wall.glb#Scene0"),
 			floor: asset_server.load("models/stone.glb#Scene0"),
@@ -48,6 +56,8 @@ impl Models {
 			question_mesh: Handle::default(),
 			wait_mesh: Handle::default(),
 			arrow_mesh: Handle::default(),
+			summon_mesh: Handle::default(),
+			return_mesh: Handle::default(),
 			unloaded,
 		}
 	}

@@ -75,10 +75,11 @@ pub fn add_indicators(
 			Action::Push(offset) => {
 				(models.arrow_mesh.clone(), transform.mul(offset.transform()))
 			}
-			Action::Summon(offset) => {
-				(models.arrow_mesh.clone(), transform.mul(offset.transform()))
-			}
-			Action::Return => (models.arrow_mesh.clone(), transform),
+			Action::Summon(offset) => (
+				models.summon_mesh.clone(),
+				transform.mul(offset.transform()),
+			),
+			Action::Return => (models.return_mesh.clone(), transform),
 		};
 		commands.spawn((
 			PbrBundle {
