@@ -1,4 +1,4 @@
-use std::{ops::Mul, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use bevy::{pbr::NotShadowCaster, prelude::*};
 use bevy_easings::{Ease, EaseFunction, EasingType};
@@ -15,6 +15,7 @@ use crate::{
 #[derive(Component)]
 pub struct Object {
 	pub id: Id,
+	pub rotates: bool,
 }
 
 #[derive(Component)]
@@ -72,12 +73,13 @@ pub fn add_indicators(
 
 		let (mesh, transform) = match action {
 			Action::Wait => (models.wait_mesh.clone(), transform),
-			Action::Push(offset) => {
-				(models.arrow_mesh.clone(), transform.mul(offset.transform()))
-			}
+			Action::Push(offset) => (
+				models.arrow_mesh.clone(),
+				transform.with_rotation(Quat::from_rotation_y(offset.angle())),
+			),
 			Action::Summon(offset) => (
 				models.summon_mesh.clone(),
-				transform.mul(offset.transform()),
+				transform.with_rotation(Quat::from_rotation_y(offset.angle())),
 			),
 			Action::Return => (models.return_mesh.clone(), transform),
 		};
@@ -118,8 +120,14 @@ pub fn animate(
 		// Apply movements.
 		for (entity, from, object) in &animation_query {
 			let Some(mv) = change.moves.get(&object.id) else { continue };
+			let target = if object.rotates {
+				Transform::from(mv.to_coords)
+					.with_rotation(Quat::from_rotation_y(mv.to_angle))
+			} else {
+				Transform::from(mv.to_coords)
+			};
 			commands.entity(entity).insert(from.ease_to(
-				Transform::from(mv.to),
+				target,
 				EaseFunction::CubicInOut,
 				EasingType::Once {
 					duration: ANIMATION_DURATION,

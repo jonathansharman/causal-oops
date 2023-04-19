@@ -1,5 +1,6 @@
 use std::{
 	cmp::Ordering,
+	f32::consts::FRAC_PI_2,
 	fmt::{Debug, Write},
 	ops::{Add, AddAssign, Mul, Neg},
 	sync::Arc,
@@ -48,12 +49,9 @@ impl Offset {
 		Offset { row, col }
 	}
 
-	/// Rotational transform from the angle formed by `self`.
-	pub fn transform(&self) -> Transform {
-		Transform::from_rotation(Quat::from_rotation_y(f32::atan2(
-			-self.row as f32,
-			self.col as f32,
-		)))
+	/// The angle formed by `self`.
+	pub fn angle(&self) -> f32 {
+		f32::atan2(-self.row as f32, self.col as f32)
 	}
 }
 
@@ -156,6 +154,7 @@ pub struct LevelObject {
 	pub id: Id,
 	pub object: Object,
 	pub coords: Coords,
+	pub angle: f32,
 }
 
 /// The set of abilities of a character. Determines what actions the character
@@ -482,29 +481,40 @@ impl Level {
 	fn apply(&mut self, change: &Change) {
 		// To make sure every target tile is open, first remove all movers.
 		for mv in change.moves.values() {
-			self.object_ids_by_coords.remove(&mv.from);
+			self.object_ids_by_coords.remove(&mv.from_coords);
 		}
 		// Now place the movers into their new tiles.
 		for (id, mv) in change.moves.iter() {
 			let level_object = self.objects_by_id.get_mut(id).unwrap();
-			self.object_ids_by_coords.insert(mv.to, level_object.id);
-			level_object.coords = mv.to;
+			self.object_ids_by_coords
+				.insert(mv.to_coords, level_object.id);
+			level_object.coords = mv.to_coords;
+			level_object.angle = mv.to_angle;
 		}
 	}
 
 	/// Gets a [`Move`] of the object `id` by `offset`.
 	fn get_move(&self, id: Id, offset: Offset) -> Move {
-		let from = self.objects_by_id[&id].coords;
-		let to = from + offset;
-		Move { from, to }
+		let object = &self.objects_by_id[&id];
+		let from_coords = object.coords;
+		let to_coords = from_coords + offset;
+		let from_angle = object.angle;
+		let to_angle = offset.angle();
+		Move {
+			from_coords,
+			to_coords,
+			from_angle,
+			to_angle,
+		}
 	}
 
 	/// Adds `object` to the level at `coords`.
-	fn add_object(&mut self, object: Object, coords: Coords) {
+	fn add_object(&mut self, object: Object, coords: Coords, angle: f32) {
 		let level_object = LevelObject {
 			id: self.next_object_id,
 			object,
 			coords,
+			angle,
 		};
 		self.next_object_id.0 += 1;
 
@@ -579,15 +589,19 @@ impl Debug for Level {
 /// A movement of an object from one tile to another.
 #[derive(Clone, Copy)]
 pub struct Move {
-	pub from: Coords,
-	pub to: Coords,
+	pub from_coords: Coords,
+	pub to_coords: Coords,
+	pub from_angle: f32,
+	pub to_angle: f32,
 }
 
 impl Move {
 	fn reversed(self) -> Move {
 		Move {
-			from: self.to,
-			to: self.from,
+			from_coords: self.to_coords,
+			to_coords: self.from_coords,
+			from_angle: self.to_angle,
+			to_angle: self.from_angle,
 		}
 	}
 }
@@ -774,7 +788,7 @@ fn make_level(map: &str) -> Level {
 		turn: 0,
 	};
 	for (object, coords) in object_coords {
-		level.add_object(object, coords);
+		level.add_object(object, coords, -FRAC_PI_2);
 	}
 	level
 }

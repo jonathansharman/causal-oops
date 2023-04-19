@@ -85,9 +85,6 @@ fn spawn_level(
 	for level_object in level.iter_objects() {
 		let Coords { row, col } = level_object.coords;
 		let transform = Transform::from_xyz(col as f32, 0.5, row as f32);
-		let object_animation = animation::Object {
-			id: level_object.id,
-		};
 		match level_object.object {
 			Object::Character { idx } => commands.spawn((
 				PbrBundle {
@@ -96,7 +93,10 @@ fn spawn_level(
 					transform,
 					..default()
 				},
-				object_animation,
+				animation::Object {
+					id: level_object.id,
+					rotates: true,
+				},
 			)),
 			Object::WoodenCrate => commands.spawn((
 				SceneBundle {
@@ -104,7 +104,10 @@ fn spawn_level(
 					transform,
 					..default()
 				},
-				object_animation,
+				animation::Object {
+					id: level_object.id,
+					rotates: false,
+				},
 			)),
 			Object::SteelCrate => commands.spawn((
 				SceneBundle {
@@ -112,7 +115,10 @@ fn spawn_level(
 					transform,
 					..default()
 				},
-				object_animation,
+				animation::Object {
+					id: level_object.id,
+					rotates: false,
+				},
 			)),
 			Object::StoneBlock => commands.spawn((
 				SceneBundle {
@@ -120,7 +126,10 @@ fn spawn_level(
 					transform,
 					..default()
 				},
-				object_animation,
+				animation::Object {
+					id: level_object.id,
+					rotates: false,
+				},
 			)),
 		};
 	}
