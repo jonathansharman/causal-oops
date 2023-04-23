@@ -133,7 +133,30 @@ pub struct Id(pub u32);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Character {
 	pub idx: usize,
-	pub abilities: Abilities,
+	pub sliding: bool,
+	pub portal: Option<Id>,
+}
+
+impl Character {
+	pub fn new(idx: usize) -> Character {
+		Character {
+			idx,
+			sliding: false,
+			portal: None,
+		}
+	}
+
+	pub fn can_push(&self) -> bool {
+		!self.sliding
+	}
+
+	pub fn can_summon(&self) -> bool {
+		self.portal.is_none()
+	}
+
+	pub fn can_return(&self) -> bool {
+		self.portal.is_some()
+	}
 }
 
 /// Something that can be moved around a level.
@@ -162,25 +185,6 @@ pub struct LevelObject {
 	pub object: Object,
 	pub coords: Coords,
 	pub angle: f32,
-}
-
-/// The set of abilities of a character. Determines what actions the character
-/// can perform during the next turn.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Abilities {
-	pub can_summon: bool,
-	pub can_return: bool,
-	pub can_push: bool,
-}
-
-impl Default for Abilities {
-	fn default() -> Self {
-		Self {
-			can_summon: true,
-			can_return: false,
-			can_push: true,
-		}
-	}
 }
 
 /// The complete state of a level at a single point in time.
@@ -752,46 +756,16 @@ fn make_level(map: &str) -> Level {
 				_ => Tile::Floor,
 			});
 			if let Some(object) = match object {
-				b'0' => Some(Object::Character(Character {
-					idx: 0,
-					abilities: Abilities::default(),
-				})),
-				b'1' => Some(Object::Character(Character {
-					idx: 1,
-					abilities: Abilities::default(),
-				})),
-				b'2' => Some(Object::Character(Character {
-					idx: 2,
-					abilities: Abilities::default(),
-				})),
-				b'3' => Some(Object::Character(Character {
-					idx: 3,
-					abilities: Abilities::default(),
-				})),
-				b'4' => Some(Object::Character(Character {
-					idx: 4,
-					abilities: Abilities::default(),
-				})),
-				b'5' => Some(Object::Character(Character {
-					idx: 5,
-					abilities: Abilities::default(),
-				})),
-				b'6' => Some(Object::Character(Character {
-					idx: 6,
-					abilities: Abilities::default(),
-				})),
-				b'7' => Some(Object::Character(Character {
-					idx: 7,
-					abilities: Abilities::default(),
-				})),
-				b'8' => Some(Object::Character(Character {
-					idx: 8,
-					abilities: Abilities::default(),
-				})),
-				b'9' => Some(Object::Character(Character {
-					idx: 9,
-					abilities: Abilities::default(),
-				})),
+				b'0' => Some(Object::Character(Character::new(0))),
+				b'1' => Some(Object::Character(Character::new(1))),
+				b'2' => Some(Object::Character(Character::new(2))),
+				b'3' => Some(Object::Character(Character::new(3))),
+				b'4' => Some(Object::Character(Character::new(4))),
+				b'5' => Some(Object::Character(Character::new(5))),
+				b'6' => Some(Object::Character(Character::new(6))),
+				b'7' => Some(Object::Character(Character::new(7))),
+				b'8' => Some(Object::Character(Character::new(8))),
+				b'9' => Some(Object::Character(Character::new(9))),
 				b'X' => Some(Object::WoodenCrate),
 				b'Y' => Some(Object::SteelCrate),
 				b'Z' => Some(Object::StoneBlock),

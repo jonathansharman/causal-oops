@@ -129,7 +129,7 @@ pub fn control(
 			(GameButton::Up, ButtonState::Pressed) => {
 				if state.summoning {
 					act(Action::Summon(Offset::UP))
-				} else if actor.character.abilities.can_push {
+				} else if actor.character.can_push() {
 					act(Action::Push(Offset::UP))
 				} else {
 					None
@@ -138,7 +138,7 @@ pub fn control(
 			(GameButton::Left, ButtonState::Pressed) => {
 				if state.summoning {
 					act(Action::Summon(Offset::LEFT))
-				} else if actor.character.abilities.can_push {
+				} else if actor.character.can_push() {
 					act(Action::Push(Offset::LEFT))
 				} else {
 					None
@@ -147,7 +147,7 @@ pub fn control(
 			(GameButton::Down, ButtonState::Pressed) => {
 				if state.summoning {
 					act(Action::Summon(Offset::DOWN))
-				} else if actor.character.abilities.can_push {
+				} else if actor.character.can_push() {
 					act(Action::Push(Offset::DOWN))
 				} else {
 					None
@@ -156,7 +156,7 @@ pub fn control(
 			(GameButton::Right, ButtonState::Pressed) => {
 				if state.summoning {
 					act(Action::Summon(Offset::RIGHT))
-				} else if actor.character.abilities.can_push {
+				} else if actor.character.can_push() {
 					act(Action::Push(Offset::RIGHT))
 				} else {
 					None
@@ -167,10 +167,10 @@ pub fn control(
 				// The Act button is contextual. If the actor has the ability to
 				// return, it's the return button. If it has the ability to
 				// summon, it's a modifier button.
-				if actor.character.abilities.can_return {
+				if actor.character.can_return() {
 					act(Action::Return)
 				} else {
-					if actor.character.abilities.can_summon {
+					if actor.character.can_summon() {
 						state.summoning = true;
 					}
 					None
