@@ -84,10 +84,7 @@ pub fn add_indicators(
 				models.arrow_mesh.clone(),
 				transform.with_rotation(Quat::from_rotation_y(offset.angle())),
 			),
-			Action::Summon(offset) => (
-				models.summon_mesh.clone(),
-				transform.with_rotation(Quat::from_rotation_y(offset.angle())),
-			),
+			Action::Summon(_offset) => (models.summon_mesh.clone(), transform),
 			Action::Return => (models.return_mesh.clone(), transform),
 		};
 		// Spawn the indicator.

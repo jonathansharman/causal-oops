@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{f32::consts::FRAC_PI_2, sync::Arc};
 
 use bevy::prelude::*;
 use bevy_easings::EasingsPlugin;
@@ -103,6 +103,9 @@ fn spawn_level(
 						PbrBundle {
 							mesh: meshes.character.clone(),
 							material: materials.characters[c.idx].clone(),
+							transform: Transform::from_rotation(
+								Quat::from_rotation_y(-FRAC_PI_2),
+							),
 							..default()
 						},
 					));
