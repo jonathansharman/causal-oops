@@ -84,53 +84,80 @@ fn spawn_level(
 	// Spawn object entities.
 	for level_object in level.iter_objects() {
 		let Coords { row, col } = level_object.coords;
-		let transform = Transform::from_xyz(col as f32, 0.5, row as f32);
+		let spatial_bundle = SpatialBundle {
+			transform: Transform::from_xyz(col as f32, 0.5, row as f32),
+			..default()
+		};
 		match level_object.object {
-			Object::Character { idx } => commands.spawn((
-				PbrBundle {
-					mesh: meshes.character.clone(),
-					material: materials.characters[idx].clone(),
-					transform,
-					..default()
-				},
-				animation::Object {
-					id: level_object.id,
-					rotates: true,
-				},
-			)),
-			Object::WoodenCrate => commands.spawn((
-				SceneBundle {
-					scene: models.wooden_crate.clone(),
-					transform,
-					..default()
-				},
-				animation::Object {
-					id: level_object.id,
-					rotates: false,
-				},
-			)),
-			Object::SteelCrate => commands.spawn((
-				SceneBundle {
-					scene: models.steel_crate.clone(),
-					transform,
-					..default()
-				},
-				animation::Object {
-					id: level_object.id,
-					rotates: false,
-				},
-			)),
-			Object::StoneBlock => commands.spawn((
-				SceneBundle {
-					scene: models.stone_block.clone(),
-					transform,
-					..default()
-				},
-				animation::Object {
-					id: level_object.id,
-					rotates: false,
-				},
-			)),
+			Object::Character { idx } => commands
+				.spawn((
+					animation::Object {
+						id: level_object.id,
+						rotates: true,
+					},
+					spatial_bundle,
+				))
+				.with_children(|child_builder| {
+					child_builder.spawn((
+						animation::ObjectBody,
+						PbrBundle {
+							mesh: meshes.character.clone(),
+							material: materials.characters[idx].clone(),
+							..default()
+						},
+					));
+				}),
+			Object::WoodenCrate => commands
+				.spawn((
+					animation::Object {
+						id: level_object.id,
+						rotates: false,
+					},
+					spatial_bundle,
+				))
+				.with_children(|child_builder| {
+					child_builder.spawn((
+						animation::ObjectBody,
+						SceneBundle {
+							scene: models.wooden_crate.clone(),
+							..default()
+						},
+					));
+				}),
+			Object::SteelCrate => commands
+				.spawn((
+					animation::Object {
+						id: level_object.id,
+						rotates: false,
+					},
+					spatial_bundle,
+				))
+				.with_children(|child_builder| {
+					child_builder.spawn((
+						animation::ObjectBody,
+						SceneBundle {
+							scene: models.steel_crate.clone(),
+							..default()
+						},
+					));
+				}),
+			Object::StoneBlock => commands
+				.spawn((
+					animation::Object {
+						id: level_object.id,
+						rotates: false,
+					},
+					spatial_bundle,
+				))
+				.with_children(|child_builder| {
+					child_builder.spawn((
+						animation::ObjectBody,
+						SceneBundle {
+							scene: models.stone_block.clone(),
+							..default()
+						},
+					));
+				}),
 		};
 	}
 }
