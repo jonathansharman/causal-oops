@@ -129,10 +129,17 @@ pub enum Tile {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub u32);
 
+/// A playable character.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Character {
+	pub idx: usize,
+	pub abilities: Abilities,
+}
+
 /// Something that can be moved around a level.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Object {
-	Character { idx: usize },
+	Character(Character),
 	WoodenCrate,
 	SteelCrate,
 	StoneBlock,
@@ -159,11 +166,21 @@ pub struct LevelObject {
 
 /// The set of abilities of a character. Determines what actions the character
 /// can perform during the next turn.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Abilities {
 	pub can_summon: bool,
 	pub can_return: bool,
 	pub can_push: bool,
+}
+
+impl Default for Abilities {
+	fn default() -> Self {
+		Self {
+			can_summon: true,
+			can_return: false,
+			can_push: true,
+		}
+	}
 }
 
 /// The complete state of a level at a single point in time.
@@ -174,7 +191,7 @@ pub struct Level {
 	tiles: Vec<Tile>,
 	objects_by_id: HashMap<Id, LevelObject>,
 	object_ids_by_coords: HashMap<Coords, Id>,
-	character_abilities: Vec<(Id, Abilities)>,
+	characters: Vec<(Id, Character)>,
 	next_object_id: Id,
 	/// History of the level's state, for seeking backward and forward in time.
 	history: Vec<BiChange>,
@@ -210,9 +227,9 @@ impl Level {
 		self.objects_by_id.values()
 	}
 
-	/// Each character's abilities for the next turn.
-	pub fn character_abilities(&self) -> &[(Id, Abilities)] {
-		&self.character_abilities
+	/// Characters in the level.
+	pub fn characters(&self) -> &[(Id, Character)] {
+		&self.characters
 	}
 
 	/// Updates the level by executing `character_actions`, returning the
@@ -520,15 +537,8 @@ impl Level {
 
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
-		if let Object::Character { .. } = level_object.object {
-			self.character_abilities.push((
-				level_object.id,
-				Abilities {
-					can_summon: true,
-					can_return: true,
-					can_push: true,
-				},
-			));
+		if let Object::Character(c) = level_object.object {
+			self.characters.push((level_object.id, c));
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
 	}
@@ -562,7 +572,7 @@ impl Debug for Level {
 					Tile::Wall => '#',
 				})?;
 				f.write_char(match object {
-					Some(Object::Character { idx }) => match idx {
+					Some(Object::Character(c)) => match c.idx {
 						0 => '0',
 						1 => '1',
 						2 => '2',
@@ -742,16 +752,46 @@ fn make_level(map: &str) -> Level {
 				_ => Tile::Floor,
 			});
 			if let Some(object) = match object {
-				b'0' => Some(Object::Character { idx: 0 }),
-				b'1' => Some(Object::Character { idx: 1 }),
-				b'2' => Some(Object::Character { idx: 2 }),
-				b'3' => Some(Object::Character { idx: 3 }),
-				b'4' => Some(Object::Character { idx: 4 }),
-				b'5' => Some(Object::Character { idx: 5 }),
-				b'6' => Some(Object::Character { idx: 6 }),
-				b'7' => Some(Object::Character { idx: 7 }),
-				b'8' => Some(Object::Character { idx: 8 }),
-				b'9' => Some(Object::Character { idx: 9 }),
+				b'0' => Some(Object::Character(Character {
+					idx: 0,
+					abilities: Abilities::default(),
+				})),
+				b'1' => Some(Object::Character(Character {
+					idx: 1,
+					abilities: Abilities::default(),
+				})),
+				b'2' => Some(Object::Character(Character {
+					idx: 2,
+					abilities: Abilities::default(),
+				})),
+				b'3' => Some(Object::Character(Character {
+					idx: 3,
+					abilities: Abilities::default(),
+				})),
+				b'4' => Some(Object::Character(Character {
+					idx: 4,
+					abilities: Abilities::default(),
+				})),
+				b'5' => Some(Object::Character(Character {
+					idx: 5,
+					abilities: Abilities::default(),
+				})),
+				b'6' => Some(Object::Character(Character {
+					idx: 6,
+					abilities: Abilities::default(),
+				})),
+				b'7' => Some(Object::Character(Character {
+					idx: 7,
+					abilities: Abilities::default(),
+				})),
+				b'8' => Some(Object::Character(Character {
+					idx: 8,
+					abilities: Abilities::default(),
+				})),
+				b'9' => Some(Object::Character(Character {
+					idx: 9,
+					abilities: Abilities::default(),
+				})),
 				b'X' => Some(Object::WoodenCrate),
 				b'Y' => Some(Object::SteelCrate),
 				b'Z' => Some(Object::StoneBlock),
@@ -765,10 +805,9 @@ fn make_level(map: &str) -> Level {
 	// Ensure characters are added in index order.
 	object_coords.sort_unstable_by(|(o1, c1), (o2, c2)| {
 		match (o1, o2) {
-			(
-				Object::Character { idx: idx1 },
-				Object::Character { idx: idx2 },
-			) => idx1.cmp(idx2),
+			(Object::Character(c1), Object::Character(c2)) => {
+				c1.idx.cmp(&c2.idx)
+			}
 			// Put characters before non-characters.
 			(Object::Character { .. }, _) => Ordering::Less,
 			(_, Object::Character { .. }) => Ordering::Greater,
@@ -782,7 +821,7 @@ fn make_level(map: &str) -> Level {
 		tiles,
 		objects_by_id: HashMap::new(),
 		object_ids_by_coords: HashMap::new(),
-		character_abilities: Vec::new(),
+		characters: Vec::new(),
 		next_object_id: Id(0),
 		history: Vec::new(),
 		turn: 0,
@@ -807,13 +846,13 @@ mod tests {
 	/// number of characters in the level. Actions will be performed in
 	/// character index order.
 	fn perform<const N: usize>(level: &mut Level, actions: [Action; N]) {
-		let character_abilities: Vec<_> = level
-			.character_abilities
+		let character_actions: Vec<_> = level
+			.characters
 			.iter()
 			.zip(actions)
 			.map(|((id, _), action)| (*id, action))
 			.collect();
-		level.update(character_abilities.into_iter());
+		level.update(character_actions.into_iter());
 	}
 
 	/// Performs `actions` on `start` and asserts the result is equal to `end`.

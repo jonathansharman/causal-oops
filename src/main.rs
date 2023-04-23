@@ -89,7 +89,7 @@ fn spawn_level(
 			..default()
 		};
 		match level_object.object {
-			Object::Character { idx } => commands
+			Object::Character(c) => commands
 				.spawn((
 					animation::Object {
 						id: level_object.id,
@@ -102,7 +102,7 @@ fn spawn_level(
 						animation::ObjectBody,
 						PbrBundle {
 							mesh: meshes.character.clone(),
-							material: materials.characters[idx].clone(),
+							material: materials.characters[c.idx].clone(),
 							..default()
 						},
 					));
@@ -185,11 +185,8 @@ fn create_level(
 	let level = level::test_level();
 	spawn_level(&mut commands, &models, &meshes, &materials, &level);
 	// Kick off the control loop by sending the first actor.
-	let (id, abilities) = level.character_abilities().first().unwrap();
-	next_actors.send(NextActor {
-		id: *id,
-		abilities: *abilities,
-	});
+	let &(id, character) = level.characters().first().unwrap();
+	next_actors.send(NextActor { id, character });
 
 	// Add static camera overlooking the level.
 	let center_x = (level.width() as f32 - 1.0) / 2.0;

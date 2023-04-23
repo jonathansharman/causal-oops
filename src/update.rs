@@ -4,14 +4,14 @@ use bevy::prelude::*;
 
 use crate::{
 	control::{Action, ControlEvent},
-	level::{Abilities, Change, Id, Level},
+	level::{Change, Character, Id, Level},
 };
 
-/// The ID and abilities of the next character to act.
+/// The next character to act.
 #[derive(Clone, Copy)]
 pub struct NextActor {
 	pub id: Id,
-	pub abilities: Abilities,
+	pub character: Character,
 }
 
 /// Local state for the update system, to store queued actions.
@@ -34,7 +34,7 @@ pub fn update(
 			ControlEvent::Act(character_action) => {
 				state.queue.push(*character_action);
 				// If all characters have queued actions, execute the turn.
-				if state.queue.len() == level.character_abilities().len() {
+				if state.queue.len() == level.characters().len() {
 					let actions = Vec::from_iter(state.queue.drain(..));
 
 					let change = level.update(actions.iter().copied());
@@ -55,7 +55,7 @@ pub fn update(
 			}
 		}
 		// Send the next actor to the control and animation systems.
-		let (id, abilities) = level.character_abilities()[state.queue.len()];
-		next_actors.send(NextActor { id, abilities });
+		let (id, character) = level.characters()[state.queue.len()];
+		next_actors.send(NextActor { id, character });
 	}
 }
