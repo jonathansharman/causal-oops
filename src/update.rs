@@ -36,8 +36,7 @@ pub fn update(
 				// If all characters have queued actions, execute the turn.
 				if state.queue.len() == level.characters().len() {
 					let actions = Vec::from_iter(state.queue.drain(..));
-
-					let change = level.update(actions.iter().copied());
+					let change = level.update(actions);
 					change_events.send(change);
 				}
 			}

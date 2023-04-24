@@ -236,23 +236,70 @@ impl Level {
 		&self.characters
 	}
 
-	/// Updates the level by executing `character_actions`, returning the
-	/// resulting (possibly trivial) [`Change`].
-	pub fn update(
-		&mut self,
-		character_actions: impl Iterator<Item = (Id, Action)>,
-	) -> Arc<Change> {
-		// Map pushers to their desired offsets.
-		let pushers: HashMap<Id, Offset> = character_actions
-			.filter_map(|(id, action)| {
-				if let Action::Push(offset) = action {
-					Some((id, offset))
-				} else {
-					None
+	/// Updates the level by making the `actors` act, returning the resulting
+	/// (possibly trivial) [`Change`].
+	///
+	/// Actions are resolved in three phases: (1) return, (2) push, (3) summon.
+	/// Actions within each phase are simultaneous.
+	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> Arc<Change> {
+		// Map pushers and summoners to their offsets.
+		let (pushers, summoners, returners) = {
+			let mut pushers = HashMap::new();
+			let mut summoners = HashMap::new();
+			let mut returners = HashSet::new();
+			for (id, action) in actors {
+				match action {
+					Action::Push(offset) => {
+						pushers.insert(id, offset);
+					}
+					Action::Summon(offset) => {
+						summoners.insert(id, offset);
+					}
+					Action::Return => {
+						returners.insert(id);
+					}
+					Action::Wait => {}
 				}
-			})
-			.collect();
+			}
+			(pushers, summoners, returners)
+		};
 
+		// TODO: returns
+		let returns = HashMap::new();
+		self.apply_returns(&returns);
+
+		let moves = self.update_pushers(pushers);
+		self.apply_moves(&moves);
+
+		// TODO: Build summons.
+		let summons = HashMap::new();
+		self.apply_summons(&summons);
+
+		// Add the change to the turn history and then return it.
+		let change = Change {
+			returns,
+			moves,
+			summons,
+		};
+		let reverse = Arc::new(change.clone().reversed());
+		let change = Arc::new(change);
+		// Truncate history to remove any future states. This is a no-op if the
+		// level is already at the end of its history.
+		self.history.truncate(self.turn);
+		self.history.push(BiChange {
+			forward: change.clone(),
+			reverse,
+		});
+		self.turn += 1;
+		change
+	}
+
+	/// Updates the level by making the `pushers` push, returning any resulting
+	/// [`Move`]s.
+	fn update_pushers(
+		&mut self,
+		pushers: HashMap<Id, Offset>,
+	) -> HashMap<Id, Move> {
 		// Build the set of teams, keyed by starting coordinates. Teams may not
 		// be maximal; i.e. some teams may be subsumed by larger ones.
 		let mut teams: HashMap<Coords, Team> = pushers
@@ -452,24 +499,7 @@ impl Level {
 				moves.insert(id, mv);
 			}
 		}
-
-		// Create and apply the change.
-		let change = Change { moves };
-		self.apply(&change);
-
-		// Add the change to the turn history.
-		let reverse = Arc::new(change.reversed());
-		let change = Arc::new(change);
-		// Truncate history to remove any future states. This is a no-op if the
-		// level is already at the end of its history.
-		self.history.truncate(self.turn);
-		self.history.push(BiChange {
-			forward: change.clone(),
-			reverse,
-		});
-		self.turn += 1;
-
-		change
+		moves
 	}
 
 	/// If possible, moves to the previous level state and returns the applied
@@ -500,18 +530,35 @@ impl Level {
 
 	/// Applies `change` to the level's state without affecting history.
 	fn apply(&mut self, change: &Change) {
+		self.apply_returns(&change.returns);
+		self.apply_moves(&change.moves);
+		self.apply_summons(&change.summons);
+	}
+
+	/// Applies `returns` to the level's state without affecting history.
+	fn apply_returns(&mut self, returns: &HashMap<Id, Return>) {
+		todo!()
+	}
+
+	/// Applies `moves` to the level's state without affecting history.
+	fn apply_moves(&mut self, moves: &HashMap<Id, Move>) {
 		// To make sure every target tile is open, first remove all movers.
-		for mv in change.moves.values() {
+		for mv in moves.values() {
 			self.object_ids_by_coords.remove(&mv.from_coords);
 		}
 		// Now place the movers into their new tiles.
-		for (id, mv) in change.moves.iter() {
+		for (id, mv) in moves.iter() {
 			let level_object = self.objects_by_id.get_mut(id).unwrap();
 			self.object_ids_by_coords
 				.insert(mv.to_coords, level_object.id);
 			level_object.coords = mv.to_coords;
 			level_object.angle = mv.to_angle;
 		}
+	}
+
+	/// Applies `summons` to the level's state without affecting history.
+	fn apply_summons(&mut self, summons: &HashMap<Id, Summon>) {
+		todo!()
 	}
 
 	/// Gets a [`Move`] of the object `id` by `offset`.
@@ -600,6 +647,16 @@ impl Debug for Level {
 	}
 }
 
+/// A character's return to the past.
+#[derive(Clone)]
+pub struct Return {}
+
+impl Return {
+	fn reversed(self) -> Return {
+		Return {}
+	}
+}
+
 /// A movement of an object from one tile to another.
 #[derive(Clone, Copy)]
 pub struct Move {
@@ -620,19 +677,41 @@ impl Move {
 	}
 }
 
+/// A character's summoning from the future.
+#[derive(Clone)]
+pub struct Summon {}
+
+impl Summon {
+	fn reversed(self) -> Summon {
+		Summon {}
+	}
+}
+
 /// A change from one [`Level`] state to another.
 #[derive(Clone)]
 pub struct Change {
+	pub returns: HashMap<Id, Return>,
 	pub moves: HashMap<Id, Move>,
+	pub summons: HashMap<Id, Summon>,
 }
 
 impl Change {
-	fn reversed(&self) -> Change {
+	fn reversed(self) -> Change {
 		Change {
+			returns: self
+				.returns
+				.into_iter()
+				.map(|(id, ret)| (id, ret.reversed()))
+				.collect(),
 			moves: self
 				.moves
-				.iter()
-				.map(|(id, mv)| (*id, mv.reversed()))
+				.into_iter()
+				.map(|(id, mv)| (id, mv.reversed()))
+				.collect(),
+			summons: self
+				.summons
+				.into_iter()
+				.map(|(id, summon)| (id, summon.reversed()))
 				.collect(),
 		}
 	}
@@ -820,13 +899,13 @@ mod tests {
 	/// number of characters in the level. Actions will be performed in
 	/// character index order.
 	fn perform<const N: usize>(level: &mut Level, actions: [Action; N]) {
-		let character_actions: Vec<_> = level
+		let character_actions = level
 			.characters
 			.iter()
 			.zip(actions)
 			.map(|((id, _), action)| (*id, action))
 			.collect();
-		level.update(character_actions.into_iter());
+		level.update(character_actions);
 	}
 
 	/// Performs `actions` on `start` and asserts the result is equal to `end`.
