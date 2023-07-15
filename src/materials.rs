@@ -1,19 +1,20 @@
 use bevy::prelude::*;
 
+use crate::level::CharacterColor;
+
 #[derive(Resource)]
 pub struct Materials {
-	pub characters: [Handle<StandardMaterial>; 3],
+	pub characters: [Handle<StandardMaterial>; CharacterColor::COUNT],
 	pub indicator: Handle<StandardMaterial>,
 }
 
 impl Materials {
 	pub fn load(material_assets: &mut Assets<StandardMaterial>) -> Self {
 		Self {
-			characters: [
-				material_assets.add(Color::rgb(0.2, 0.7, 0.2).into()),
-				material_assets.add(Color::rgb(0.7, 0.2, 0.2).into()),
-				material_assets.add(Color::rgb(0.2, 0.2, 0.7).into()),
-			],
+			characters: std::array::from_fn(|idx| {
+				material_assets
+					.add(CharacterColor::from(idx as u8).color().into())
+			}),
 			indicator: material_assets.add(Color::WHITE.into()),
 		}
 	}

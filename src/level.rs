@@ -121,7 +121,7 @@ impl Add<Offset> for Coords {
 /// A level tile.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tile {
-	Floor,
+	Floor { portal_summoner: Option<Id> },
 	Wall,
 }
 
@@ -129,20 +129,72 @@ pub enum Tile {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(pub u32);
 
+/// Distinguishes between characters and links them to their return portals.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum CharacterColor {
+	Green,
+	Red,
+	Blue,
+	Yellow,
+	Magenta,
+	Cyan,
+	Black,
+	White,
+}
+
+impl CharacterColor {
+	// TODO: Replace with std::mem::variant_count when stabilized.
+	pub const COUNT: usize = 8;
+
+	pub fn idx(&self) -> usize {
+		*self as usize
+	}
+
+	pub fn color(&self) -> Color {
+		match self {
+			CharacterColor::Green => Color::rgb(0.2, 0.7, 0.2),
+			CharacterColor::Red => Color::rgb(0.7, 0.2, 0.2),
+			CharacterColor::Blue => Color::rgb(0.2, 0.2, 0.7),
+			CharacterColor::Yellow => Color::rgb(0.7, 0.7, 0.2),
+			CharacterColor::Magenta => Color::rgb(0.7, 0.2, 0.7),
+			CharacterColor::Cyan => Color::rgb(0.2, 0.7, 0.7),
+			CharacterColor::Black => Color::rgb(0.2, 0.2, 0.2),
+			CharacterColor::White => Color::rgb(0.7, 0.7, 0.7),
+		}
+	}
+}
+
+impl From<u8> for CharacterColor {
+	fn from(value: u8) -> Self {
+		match value {
+			0 => CharacterColor::Green,
+			1 => CharacterColor::Red,
+			2 => CharacterColor::Blue,
+			3 => CharacterColor::Yellow,
+			4 => CharacterColor::Magenta,
+			5 => CharacterColor::Cyan,
+			6 => CharacterColor::Black,
+			7 => CharacterColor::White,
+			_ => panic!("color out of bounds: {value}"),
+		}
+	}
+}
+
 /// A playable character.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Character {
-	pub idx: usize,
+	pub color: CharacterColor,
 	pub sliding: bool,
-	pub portal: Option<Id>,
+	pub portal_coords: Option<Coords>,
 }
 
 impl Character {
-	pub fn new(idx: usize) -> Character {
+	pub fn new(color: CharacterColor) -> Character {
 		Character {
-			idx,
+			color,
 			sliding: false,
-			portal: None,
+			portal_coords: None,
 		}
 	}
 
@@ -151,11 +203,11 @@ impl Character {
 	}
 
 	pub fn can_summon(&self) -> bool {
-		self.portal.is_none()
+		self.portal_coords.is_none()
 	}
 
 	pub fn can_return(&self) -> bool {
-		self.portal.is_some()
+		self.portal_coords.is_some()
 	}
 }
 
@@ -213,9 +265,20 @@ impl Level {
 		self.height
 	}
 
+	/// The index of the tile at `coords`.
+	fn tile_idx(&self, coords: Coords) -> usize {
+		coords.row as usize * self.width + coords.col as usize
+	}
+
 	/// The tile at `coords`.
 	pub fn tile(&self, coords: Coords) -> Tile {
-		self.tiles[coords.row as usize * self.width + coords.col as usize]
+		self.tiles[self.tile_idx(coords)]
+	}
+
+	/// Sets the tile at `coords` to `tile`.
+	pub fn set_tile(&mut self, coords: Coords, tile: Tile) {
+		let idx = self.tile_idx(coords);
+		self.tiles[idx] = tile;
 	}
 
 	/// The object at `coords`, if any.
@@ -264,24 +327,23 @@ impl Level {
 			(pushers, summoners, returners)
 		};
 
-		// TODO: returns
-		let returns = HashMap::new();
+		let returns = self.get_returns(returners);
 		self.apply_returns(&returns);
 
-		let moves = self.update_pushers(pushers);
+		let moves = self.get_moves(pushers);
 		self.apply_moves(&moves);
 
-		// TODO: Build summons.
-		let summons = HashMap::new();
+		let summons = self.get_summons(summoners);
 		self.apply_summons(&summons);
 
 		// Add the change to the turn history and then return it.
 		let change = Change {
+			reversed: false,
 			returns,
 			moves,
 			summons,
 		};
-		let reverse = Arc::new(change.clone().reversed());
+		let reverse = Arc::new(change.clone().reverse());
 		let change = Arc::new(change);
 		// Truncate history to remove any future states. This is a no-op if the
 		// level is already at the end of its history.
@@ -294,12 +356,34 @@ impl Level {
 		change
 	}
 
-	/// Updates the level by making the `pushers` push, returning any resulting
-	/// [`Move`]s.
-	fn update_pushers(
-		&mut self,
-		pushers: HashMap<Id, Offset>,
-	) -> HashMap<Id, Move> {
+	/// Computes the set of [`Return`]s resulting from the given `returners`.
+	fn get_returns(&mut self, returners: HashSet<Id>) -> HashMap<Id, Return> {
+		let mut returns = HashMap::new();
+		for id in returners {
+			let returner = &self.objects_by_id[&id];
+			let Object::Character(character) = returner.object else {
+				panic!("non-character returner");
+			};
+			let Some(portal_coords) = character.portal_coords else {
+				panic!("returning character with no linked portal");
+			};
+			if returner.coords == portal_coords {
+				returns.insert(
+					id,
+					Return {
+						reversed: false,
+						character,
+						coords: returner.coords,
+						angle: returner.angle,
+					},
+				);
+			}
+		}
+		returns
+	}
+
+	/// Computes the set of [`Move`]s resulting from the given `pushers`.
+	fn get_moves(&self, pushers: HashMap<Id, Offset>) -> HashMap<Id, Move> {
 		// Build the set of teams, keyed by starting coordinates. Teams may not
 		// be maximal; i.e. some teams may be subsumed by larger ones.
 		let mut teams: HashMap<Coords, Team> = pushers
@@ -502,6 +586,15 @@ impl Level {
 		moves
 	}
 
+	/// Computes the set of [`Summon`]s resulting from the given `summoners`.
+	fn get_summons(
+		&self,
+		summoners: HashMap<Id, Offset>,
+	) -> HashMap<Id, Summon> {
+		// TODO
+		HashMap::new()
+	}
+
 	/// If possible, moves to the previous level state and returns the applied
 	/// [`Change`].
 	pub fn undo(&mut self) -> Option<Arc<Change>> {
@@ -530,14 +623,49 @@ impl Level {
 
 	/// Applies `change` to the level's state without affecting history.
 	fn apply(&mut self, change: &Change) {
-		self.apply_returns(&change.returns);
-		self.apply_moves(&change.moves);
-		self.apply_summons(&change.summons);
+		if change.reversed {
+			self.apply_summons(&change.summons);
+			self.apply_moves(&change.moves);
+			self.apply_returns(&change.returns);
+		} else {
+			self.apply_returns(&change.returns);
+			self.apply_moves(&change.moves);
+			self.apply_summons(&change.summons);
+		}
 	}
 
 	/// Applies `returns` to the level's state without affecting history.
 	fn apply_returns(&mut self, returns: &HashMap<Id, Return>) {
-		todo!()
+		for (returner_id, ret) in returns {
+			if ret.reversed {
+				// Reopen portal.
+				self.set_tile(
+					ret.coords,
+					Tile::Floor {
+						// Link the portal with the next object ID, which will
+						// be used for the resummoned character.
+						portal_summoner: Some(self.next_object_id),
+					},
+				);
+				// Resummon character.
+				self.add_level_object(LevelObject {
+					id: *returner_id,
+					object: Object::Character(ret.character),
+					coords: ret.coords,
+					angle: ret.angle,
+				});
+			} else {
+				// Close portal.
+				self.set_tile(
+					ret.coords,
+					Tile::Floor {
+						portal_summoner: None,
+					},
+				);
+				// Remove returning character.
+				self.remove_object(ret.coords);
+			}
+		}
 	}
 
 	/// Applies `moves` to the level's state without affecting history.
@@ -558,7 +686,51 @@ impl Level {
 
 	/// Applies `summons` to the level's state without affecting history.
 	fn apply_summons(&mut self, summons: &HashMap<Id, Summon>) {
-		todo!()
+		for (summoner_id, summon) in summons {
+			if summon.reversed {
+				// Close portal.
+				self.set_tile(
+					summon.coords,
+					Tile::Floor {
+						portal_summoner: None,
+					},
+				);
+				// Unlink summoner from portal.
+				for (id, c) in self.characters.iter_mut() {
+					if id == summoner_id {
+						c.portal_coords = None;
+						break;
+					}
+				}
+				// Remove summoned character.
+				self.remove_object(summon.coords);
+			} else {
+				// Open portal.
+				self.set_tile(
+					summon.coords,
+					Tile::Floor {
+						portal_summoner: Some(*summoner_id),
+					},
+				);
+				// Update summoner's linked portal.
+				for (id, c) in self.characters.iter_mut() {
+					if id == summoner_id {
+						c.portal_coords = Some(summon.coords);
+						break;
+					}
+				}
+				// Summon character from the future.
+				self.add_object(
+					Object::Character(Character {
+						color: summon.color,
+						sliding: false,
+						portal_coords: None,
+					}),
+					summon.coords,
+					-FRAC_PI_2,
+				);
+			}
+		}
 	}
 
 	/// Gets a [`Move`] of the object `id` by `offset`.
@@ -576,7 +748,7 @@ impl Level {
 		}
 	}
 
-	/// Adds `object` to the level at `coords`.
+	/// Adds `object` to the level with the given `coords` and `angle`.
 	fn add_object(&mut self, object: Object, coords: Coords, angle: f32) {
 		let level_object = LevelObject {
 			id: self.next_object_id,
@@ -585,13 +757,26 @@ impl Level {
 			angle,
 		};
 		self.next_object_id.0 += 1;
+		self.add_level_object(level_object);
+	}
 
+	/// Adds `level_object` to the level. The caller is responsible for ensuring
+	/// `level_object`'s ID is currently available.
+	fn add_level_object(&mut self, level_object: LevelObject) {
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
 		if let Object::Character(c) = level_object.object {
 			self.characters.push((level_object.id, c));
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
+	}
+
+	/// Removes the object at `coords`, if there is one.
+	fn remove_object(&mut self, coords: Coords) {
+		if let Some(removed_id) = self.object_ids_by_coords.remove(&coords) {
+			self.characters.retain(|&(id, _)| id != removed_id);
+			self.objects_by_id.remove(&removed_id);
+		}
 	}
 }
 
@@ -619,23 +804,19 @@ impl Debug for Level {
 				let tile = self.tile(coords);
 				let object = self.object(coords);
 				f.write_char(match tile {
-					Tile::Floor => '.',
+					Tile::Floor { portal_summoner } => {
+						if portal_summoner.is_some() {
+							'o'
+						} else {
+							'.'
+						}
+					}
 					Tile::Wall => '#',
 				})?;
 				f.write_char(match object {
-					Some(Object::Character(c)) => match c.idx {
-						0 => '0',
-						1 => '1',
-						2 => '2',
-						3 => '3',
-						4 => '4',
-						5 => '5',
-						6 => '6',
-						7 => '7',
-						8 => '8',
-						9 => '9',
-						_ => '?',
-					},
+					Some(Object::Character(c)) => {
+						(b'0' + c.color.idx() as u8) as char
+					}
 					Some(Object::WoodenCrate) => 'X',
 					Some(Object::SteelCrate) => 'Y',
 					Some(Object::StoneBlock) => 'Z',
@@ -649,11 +830,19 @@ impl Debug for Level {
 
 /// A character's return to the past.
 #[derive(Clone)]
-pub struct Return {}
+pub struct Return {
+	reversed: bool,
+	character: Character,
+	coords: Coords,
+	angle: f32,
+}
 
 impl Return {
-	fn reversed(self) -> Return {
-		Return {}
+	fn reverse(self) -> Return {
+		Return {
+			reversed: !self.reversed,
+			..self
+		}
 	}
 }
 
@@ -667,7 +856,7 @@ pub struct Move {
 }
 
 impl Move {
-	fn reversed(self) -> Move {
+	fn reverse(self) -> Move {
 		Move {
 			from_coords: self.to_coords,
 			to_coords: self.from_coords,
@@ -679,39 +868,48 @@ impl Move {
 
 /// A character's summoning from the future.
 #[derive(Clone)]
-pub struct Summon {}
+pub struct Summon {
+	reversed: bool,
+	coords: Coords,
+	color: CharacterColor,
+}
 
 impl Summon {
-	fn reversed(self) -> Summon {
-		Summon {}
+	fn reverse(self) -> Summon {
+		Summon {
+			reversed: !self.reversed,
+			..self
+		}
 	}
 }
 
 /// A change from one [`Level`] state to another.
 #[derive(Clone)]
 pub struct Change {
+	pub reversed: bool,
 	pub returns: HashMap<Id, Return>,
 	pub moves: HashMap<Id, Move>,
 	pub summons: HashMap<Id, Summon>,
 }
 
 impl Change {
-	fn reversed(self) -> Change {
+	fn reverse(self) -> Change {
 		Change {
+			reversed: !self.reversed,
 			returns: self
 				.returns
 				.into_iter()
-				.map(|(id, ret)| (id, ret.reversed()))
+				.map(|(id, ret)| (id, ret.reverse()))
 				.collect(),
 			moves: self
 				.moves
 				.into_iter()
-				.map(|(id, mv)| (id, mv.reversed()))
+				.map(|(id, mv)| (id, mv.reverse()))
 				.collect(),
 			summons: self
 				.summons
 				.into_iter()
-				.map(|(id, summon)| (id, summon.reversed()))
+				.map(|(id, summon)| (id, summon.reverse()))
 				.collect(),
 		}
 	}
@@ -832,19 +1030,14 @@ fn make_level(map: &str) -> Level {
 			let (tile, object) = (tile_object[0], tile_object[1]);
 			tiles.push(match tile {
 				b'#' => Tile::Wall,
-				_ => Tile::Floor,
+				_ => Tile::Floor {
+					portal_summoner: None,
+				},
 			});
 			if let Some(object) = match object {
-				b'0' => Some(Object::Character(Character::new(0))),
-				b'1' => Some(Object::Character(Character::new(1))),
-				b'2' => Some(Object::Character(Character::new(2))),
-				b'3' => Some(Object::Character(Character::new(3))),
-				b'4' => Some(Object::Character(Character::new(4))),
-				b'5' => Some(Object::Character(Character::new(5))),
-				b'6' => Some(Object::Character(Character::new(6))),
-				b'7' => Some(Object::Character(Character::new(7))),
-				b'8' => Some(Object::Character(Character::new(8))),
-				b'9' => Some(Object::Character(Character::new(9))),
+				b'0'..=b'7' => Some(Object::Character(Character::new(
+					CharacterColor::from(object - b'0'),
+				))),
 				b'X' => Some(Object::WoodenCrate),
 				b'Y' => Some(Object::SteelCrate),
 				b'Z' => Some(Object::StoneBlock),
@@ -859,7 +1052,7 @@ fn make_level(map: &str) -> Level {
 	object_coords.sort_unstable_by(|(o1, c1), (o2, c2)| {
 		match (o1, o2) {
 			(Object::Character(c1), Object::Character(c2)) => {
-				c1.idx.cmp(&c2.idx)
+				c1.color.cmp(&c2.color)
 			}
 			// Put characters before non-characters.
 			(Object::Character { .. }, _) => Ordering::Less,
