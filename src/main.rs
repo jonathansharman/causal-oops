@@ -1,10 +1,10 @@
-use std::{f32::consts::FRAC_PI_2, sync::Arc};
+use std::f32::consts::FRAC_PI_2;
 
 use bevy::prelude::*;
 use bevy_easings::EasingsPlugin;
 
 use control::ControlEvent;
-use level::{Change, Coords, Level, Object, Tile};
+use level::{ChangeEvent, Coords, Level, Object, Tile};
 use materials::Materials;
 use meshes::Meshes;
 use models::{load_gltf_meshes, Models};
@@ -23,34 +23,39 @@ mod update;
 fn main() {
 	App::new()
 		.add_state::<GameState>()
-		.add_startup_system(setup)
-		.add_system(load_gltf_meshes.in_set(OnUpdate(GameState::Loading)))
-		.add_system(create_level.in_set(OnUpdate(GameState::CreatingLevel)))
+		.add_systems(Startup, setup)
 		.add_systems(
+			Update,
 			(
-				control::control,
-				update::update,
-				animation::add_indicators,
-				// Allow indicators to be added/removed in one frame.
-				apply_system_buffers,
-				animation::clear_indicators,
-				animation::animate,
-			)
-				.chain()
-				.in_set(OnUpdate(GameState::Playing)),
+				load_gltf_meshes.run_if(in_state(GameState::Loading)),
+				create_level.run_if(in_state(GameState::CreatingLevel)),
+				(
+					control::control,
+					update::update,
+					animation::add_indicators,
+					// Allow indicators to be added/removed in one frame.
+					apply_deferred,
+					animation::clear_indicators,
+					animation::animate,
+				)
+					.chain()
+					.run_if(in_state(GameState::Playing)),
+			),
 		)
 		.add_event::<NextActor>()
 		.add_event::<ControlEvent>()
-		.add_event::<Arc<Change>>()
+		.add_event::<ChangeEvent>()
 		.insert_resource(ClearColor(Color::BLACK))
-		.add_plugins(DefaultPlugins.set(WindowPlugin {
-			primary_window: Some(Window {
-				title: "Causal Oops".to_string(),
+		.add_plugins((
+			DefaultPlugins.set(WindowPlugin {
+				primary_window: Some(Window {
+					title: "Causal Oops".to_string(),
+					..default()
+				}),
 				..default()
 			}),
-			..default()
-		}))
-		.add_plugin(EasingsPlugin)
+			EasingsPlugin,
+		))
 		.run();
 }
 

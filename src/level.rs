@@ -304,7 +304,7 @@ impl Level {
 	///
 	/// Actions are resolved in three phases: (1) return, (2) push, (3) summon.
 	/// Actions within each phase are simultaneous.
-	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> Arc<Change> {
+	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> ChangeEvent {
 		// Map pushers and summoners to their offsets.
 		let (pushers, summoners, returners) = {
 			let mut pushers = HashMap::new();
@@ -353,7 +353,7 @@ impl Level {
 			reverse,
 		});
 		self.turn += 1;
-		change
+		ChangeEvent(change)
 	}
 
 	/// Computes the set of [`Return`]s resulting from the given `returners`.
@@ -595,27 +595,27 @@ impl Level {
 		HashMap::new()
 	}
 
-	/// If possible, moves to the previous level state and returns the applied
-	/// [`Change`].
-	pub fn undo(&mut self) -> Option<Arc<Change>> {
+	/// If possible, moves to the previous level state and returns the resulting
+	/// [`ChangeEvent`].
+	pub fn undo(&mut self) -> Option<ChangeEvent> {
 		if self.turn > 0 {
 			let change = self.history[self.turn - 1].reverse.clone();
 			self.apply(&change);
 			self.turn -= 1;
-			Some(change)
+			Some(ChangeEvent(change))
 		} else {
 			None
 		}
 	}
 
-	/// If possible, moves to the next level state and returns the applied
-	/// [`Change`].
-	pub fn redo(&mut self) -> Option<Arc<Change>> {
+	/// If possible, moves to the next level state and returns the resulting
+	/// [`ChangeEvent`].
+	pub fn redo(&mut self) -> Option<ChangeEvent> {
 		if self.turn < self.history.len() {
 			let change = self.history[self.turn].forward.clone();
 			self.apply(&change);
 			self.turn += 1;
-			Some(change)
+			Some(ChangeEvent(change))
 		} else {
 			None
 		}
@@ -914,6 +914,11 @@ impl Change {
 		}
 	}
 }
+
+/// A [`Change`] event. Note that `Change` itself can't be an [`Event`] because
+/// it's not [`Sync`].
+#[derive(Event, Deref)]
+pub struct ChangeEvent(Arc<Change>);
 
 /// A connected line of pushers and passive objects, for use in the resolution
 /// of simultaneous movement.

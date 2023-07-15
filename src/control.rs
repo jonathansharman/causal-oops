@@ -59,7 +59,7 @@ impl Default for KeyboardBindings {
 			(KeyCode::D, GameButton::Right),
 			(KeyCode::Right, GameButton::Right),
 			(KeyCode::Space, GameButton::Wait),
-			(KeyCode::LShift, GameButton::Act),
+			(KeyCode::ShiftLeft, GameButton::Act),
 		]))
 	}
 }
@@ -73,6 +73,7 @@ pub enum Action {
 	Return,
 }
 
+#[derive(Event)]
 pub enum ControlEvent {
 	Act((Id, Action)),
 	Undo,

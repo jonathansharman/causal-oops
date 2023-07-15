@@ -1,14 +1,12 @@
-use std::sync::Arc;
-
 use bevy::prelude::*;
 
 use crate::{
 	control::{Action, ControlEvent},
-	level::{Change, Character, Id, Level},
+	level::{ChangeEvent, Character, Id, Level},
 };
 
 /// The next character to act.
-#[derive(Clone, Copy)]
+#[derive(Event, Clone, Copy)]
 pub struct NextActor {
 	pub id: Id,
 	pub character: Character,
@@ -27,7 +25,7 @@ pub fn update(
 	mut level: ResMut<Level>,
 	mut control_events: EventReader<ControlEvent>,
 	mut next_actors: EventWriter<NextActor>,
-	mut change_events: EventWriter<Arc<Change>>,
+	mut change_events: EventWriter<ChangeEvent>,
 ) {
 	for control_event in control_events.iter() {
 		match control_event {
@@ -36,8 +34,8 @@ pub fn update(
 				// If all characters have queued actions, execute the turn.
 				if state.queue.len() == level.characters().len() {
 					let actions = Vec::from_iter(state.queue.drain(..));
-					let change = level.update(actions);
-					change_events.send(change);
+					let change_event = level.update(actions);
+					change_events.send(change_event);
 				}
 			}
 			ControlEvent::Undo => {
@@ -47,9 +45,9 @@ pub fn update(
 				}
 			}
 			ControlEvent::Redo => {
-				if let Some(change) = level.redo() {
+				if let Some(change_event) = level.redo() {
 					state.queue.clear();
-					change_events.send(change);
+					change_events.send(change_event);
 				}
 			}
 		}

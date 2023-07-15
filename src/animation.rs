@@ -1,11 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use bevy::{pbr::NotShadowCaster, prelude::*};
 use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
 	control::{Action, ControlEvent},
-	level::{Change, Id},
+	level::{ChangeEvent, Id},
 	materials::Materials,
 	models::Models,
 	update::NextActor,
@@ -114,7 +114,7 @@ pub fn add_indicators(
 /// Remove indicators between turns.
 pub fn clear_indicators(
 	mut commands: Commands,
-	change_events: EventReader<Arc<Change>>,
+	change_events: EventReader<ChangeEvent>,
 	choice_query: Query<Entity, With<ChoiceIndicator>>,
 ) {
 	if !change_events.is_empty() {
@@ -128,7 +128,7 @@ const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
 pub fn animate(
 	mut commands: Commands,
-	mut change_events: EventReader<Arc<Change>>,
+	mut change_events: EventReader<ChangeEvent>,
 	object_query: Query<(Entity, &Children, &Transform, &Object)>,
 	body_query: Query<(Entity, &Transform), With<ObjectBody>>,
 ) {
