@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::{pbr::NotShadowCaster, prelude::*};
 use bevy_easings::{Ease, EaseFunction, EasingType};
@@ -7,6 +7,7 @@ use crate::{
 	control::{Action, ControlEvent},
 	level::{ChangeEvent, Id},
 	materials::Materials,
+	meshes::Meshes,
 	models::Models,
 	update::NextActor,
 };
@@ -131,6 +132,8 @@ pub fn animate(
 	mut change_events: EventReader<ChangeEvent>,
 	object_query: Query<(Entity, &Children, &Transform, &Object)>,
 	body_query: Query<(Entity, &Transform), With<ObjectBody>>,
+	meshes: Res<Meshes>,
+	materials: Res<Materials>,
 ) {
 	for change in change_events.iter() {
 		// Apply movements.
@@ -161,5 +164,44 @@ pub fn animate(
 				}
 			}
 		}
+		// Spawn entities for summoned characters and opened portals.
+		for (summoner_id, summon) in change.summons.iter() {
+			let transform = Transform::from_xyz(
+				summon.coords.col as f32,
+				0.5,
+				summon.coords.row as f32,
+			);
+			commands
+				.spawn((
+					Object {
+						id: summon.id,
+						rotates: true,
+					},
+					SpatialBundle { ..default() },
+					transform.with_scale(Vec3::ZERO).ease_to(
+						transform.with_scale(Vec3::ONE),
+						EaseFunction::CubicIn,
+						EasingType::Once {
+							duration: ANIMATION_DURATION,
+						},
+					),
+				))
+				.with_children(|child_builder| {
+					child_builder.spawn((
+						ObjectBody,
+						PbrBundle {
+							mesh: meshes.character.clone(),
+							material: materials.characters[summon.color.idx()]
+								.clone(),
+							transform: Transform::from_rotation(
+								Quat::from_rotation_y(-FRAC_PI_2),
+							),
+							..default()
+						},
+					));
+				});
+			// TODO: Handle reverse summons.
+		}
+		// TODO: Despawn entities for returned characters and closed portals.
 	}
 }

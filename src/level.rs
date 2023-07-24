@@ -588,11 +588,27 @@ impl Level {
 
 	/// Computes the set of [`Summon`]s resulting from the given `summoners`.
 	fn get_summons(
-		&self,
+		&mut self,
 		summoners: HashMap<Id, Offset>,
 	) -> HashMap<Id, Summon> {
-		// TODO
-		HashMap::new()
+		// TODO: As a proof of concept, this currently just summons into the
+		// adjacent tile.
+		summoners
+			.into_iter()
+			.map(|(summoner_id, offset)| {
+				let summon_id = self.new_object_id();
+				let summoner = &self.objects_by_id[&summoner_id];
+				(
+					summoner_id,
+					Summon {
+						reversed: false,
+						id: summon_id,
+						coords: summoner.coords + offset,
+						color: self.new_color(),
+					},
+				)
+			})
+			.collect()
 	}
 
 	/// If possible, moves to the previous level state and returns the resulting
@@ -642,13 +658,11 @@ impl Level {
 				self.set_tile(
 					ret.coords,
 					Tile::Floor {
-						// Link the portal with the next object ID, which will
-						// be used for the resummoned character.
-						portal_summoner: Some(self.next_object_id),
+						portal_summoner: Some(*returner_id),
 					},
 				);
 				// Resummon character.
-				self.add_level_object(LevelObject {
+				self.spawn(LevelObject {
 					id: *returner_id,
 					object: Object::Character(ret.character),
 					coords: ret.coords,
@@ -663,7 +677,7 @@ impl Level {
 					},
 				);
 				// Remove returning character.
-				self.remove_object(ret.coords);
+				self.remove_at(ret.coords);
 			}
 		}
 	}
@@ -703,7 +717,7 @@ impl Level {
 					}
 				}
 				// Remove summoned character.
-				self.remove_object(summon.coords);
+				self.remove_at(summon.coords);
 			} else {
 				// Open portal.
 				self.set_tile(
@@ -720,15 +734,16 @@ impl Level {
 					}
 				}
 				// Summon character from the future.
-				self.add_object(
-					Object::Character(Character {
+				self.spawn(LevelObject {
+					id: summon.id,
+					object: Object::Character(Character {
 						color: summon.color,
 						sliding: false,
 						portal_coords: None,
 					}),
-					summon.coords,
-					-FRAC_PI_2,
-				);
+					coords: summon.coords,
+					angle: -FRAC_PI_2,
+				});
 			}
 		}
 	}
@@ -748,21 +763,22 @@ impl Level {
 		}
 	}
 
-	/// Adds `object` to the level with the given `coords` and `angle`.
-	fn add_object(&mut self, object: Object, coords: Coords, angle: f32) {
-		let level_object = LevelObject {
-			id: self.next_object_id,
-			object,
-			coords,
-			angle,
-		};
+	/// A fresh object ID.
+	fn new_object_id(&mut self) -> Id {
+		let id = self.next_object_id;
 		self.next_object_id.0 += 1;
-		self.add_level_object(level_object);
+		id
 	}
 
-	/// Adds `level_object` to the level. The caller is responsible for ensuring
-	/// `level_object`'s ID is currently available.
-	fn add_level_object(&mut self, level_object: LevelObject) {
+	/// The next available character color.
+	fn new_color(&mut self) -> CharacterColor {
+		// TODO: cycle through colors.
+		CharacterColor::Black
+	}
+
+	/// Spawns `level_object` into the level. The caller is responsible for
+	/// ensuring `level_object`'s ID is currently available.
+	fn spawn(&mut self, level_object: LevelObject) {
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
 		if let Object::Character(c) = level_object.object {
@@ -772,7 +788,7 @@ impl Level {
 	}
 
 	/// Removes the object at `coords`, if there is one.
-	fn remove_object(&mut self, coords: Coords) {
+	fn remove_at(&mut self, coords: Coords) {
 		if let Some(removed_id) = self.object_ids_by_coords.remove(&coords) {
 			self.characters.retain(|&(id, _)| id != removed_id);
 			self.objects_by_id.remove(&removed_id);
@@ -869,9 +885,10 @@ impl Move {
 /// A character's summoning from the future.
 #[derive(Clone)]
 pub struct Summon {
-	reversed: bool,
-	coords: Coords,
-	color: CharacterColor,
+	pub reversed: bool,
+	pub id: Id,
+	pub coords: Coords,
+	pub color: CharacterColor,
 }
 
 impl Summon {
@@ -1078,7 +1095,13 @@ fn make_level(map: &str) -> Level {
 		turn: 0,
 	};
 	for (object, coords) in object_coords {
-		level.add_object(object, coords, -FRAC_PI_2);
+		let id = level.new_object_id();
+		level.spawn(LevelObject {
+			id,
+			object,
+			coords,
+			angle: -FRAC_PI_2,
+		});
 	}
 	level
 }
