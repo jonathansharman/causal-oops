@@ -165,21 +165,30 @@ pub fn animate(
 			}
 		}
 		for summon in change.summons.values() {
+			let transform = Transform::from_xyz(
+				summon.coords.col as f32,
+				0.5,
+				summon.coords.row as f32,
+			);
 			if summon.reversed {
 				// Despawn entities for summoned character and opened portal.
 				for (parent, _, _, object) in &object_query {
 					if object.id == summon.id {
-						commands.entity(parent).despawn_recursive();
+						commands.entity(parent).insert((
+							DespawnTimer::from_duration(ANIMATION_DURATION),
+							transform.with_scale(Vec3::ONE).ease_to(
+								transform.with_scale(Vec3::ZERO),
+								EaseFunction::CubicIn,
+								EasingType::Once {
+									duration: ANIMATION_DURATION,
+								},
+							),
+						));
 						break;
 					}
 				}
 			} else {
 				// Spawn entities for summoned character and opened portal.
-				let transform = Transform::from_xyz(
-					summon.coords.col as f32,
-					0.5,
-					summon.coords.row as f32,
-				);
 				commands
 					.spawn((
 						Object {
@@ -213,5 +222,32 @@ pub fn animate(
 			}
 		}
 		// TODO: Despawn entities for returned characters and closed portals.
+	}
+}
+
+/// Marks an entity to be recursively despawned after a fixed time.
+#[derive(Component, Deref, DerefMut)]
+pub struct DespawnTimer(Timer);
+
+impl DespawnTimer {
+	fn from_duration(duration: Duration) -> DespawnTimer {
+		DespawnTimer(Timer::from_seconds(
+			duration.as_secs_f32(),
+			TimerMode::Once,
+		))
+	}
+}
+
+/// Recursively despawns entities whose [`DespawnTimer`]s have finished.
+pub fn timed_despawn(
+	mut commands: Commands,
+	mut query: Query<(Entity, &mut DespawnTimer)>,
+	time: Res<Time>,
+) {
+	for (entity, mut timer) in &mut query {
+		timer.tick(time.delta());
+		if timer.finished() {
+			commands.entity(entity).despawn_recursive();
+		}
 	}
 }
