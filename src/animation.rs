@@ -1,6 +1,9 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
-use bevy::{pbr::NotShadowCaster, prelude::*};
+use bevy::{
+	pbr::{NotShadowCaster, NotShadowReceiver},
+	prelude::*,
+};
 use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
@@ -59,6 +62,7 @@ pub fn add_indicators(
 					..default()
 				},
 				NotShadowCaster,
+				NotShadowReceiver,
 				ChoosingIndicator,
 			))
 			.id();
@@ -98,6 +102,7 @@ pub fn add_indicators(
 					..default()
 				},
 				NotShadowCaster,
+				NotShadowReceiver,
 				ChoiceIndicator,
 			))
 			.id();
@@ -127,16 +132,13 @@ pub fn clear_indicators(
 
 const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
-pub fn animate(
+pub fn animate_moves(
 	mut commands: Commands,
 	mut change_events: EventReader<ChangeEvent>,
 	object_query: Query<(Entity, &Children, &Transform, &Object)>,
 	body_query: Query<(Entity, &Transform), With<ObjectBody>>,
-	meshes: Res<Meshes>,
-	materials: Res<Materials>,
 ) {
 	for change in change_events.iter() {
-		// Apply movements.
 		for (parent, children, from, object) in &object_query {
 			let Some(mv) = change.moves.get(&object.id) else { continue };
 			commands.entity(parent).insert(from.ease_to(
@@ -164,20 +166,31 @@ pub fn animate(
 				}
 			}
 		}
+	}
+}
+
+pub fn animate_summons(
+	mut commands: Commands,
+	mut change_events: EventReader<ChangeEvent>,
+	object_query: Query<(Entity, &Object)>,
+	meshes: Res<Meshes>,
+	materials: Res<Materials>,
+) {
+	for change in change_events.iter() {
 		for summon in change.summons.values() {
-			let transform = Transform::from_xyz(
+			let summon_transform = Transform::from_xyz(
 				summon.coords.col as f32,
 				0.5,
 				summon.coords.row as f32,
 			);
 			if summon.reversed {
-				// Despawn entities for summoned character and opened portal.
-				for (parent, _, _, object) in &object_query {
+				// Despawn summoned character.
+				for (entity, object) in &object_query {
 					if object.id == summon.id {
-						commands.entity(parent).insert((
+						commands.entity(entity).insert((
 							DespawnTimer::from_duration(ANIMATION_DURATION),
-							transform.with_scale(Vec3::ONE).ease_to(
-								transform.with_scale(Vec3::ZERO),
+							summon_transform.with_scale(Vec3::ONE).ease_to(
+								summon_transform.with_scale(Vec3::ZERO),
 								EaseFunction::CubicIn,
 								EasingType::Once {
 									duration: ANIMATION_DURATION,
@@ -187,8 +200,11 @@ pub fn animate(
 						break;
 					}
 				}
+				for (entity, object) in &object_query {
+					// TODO: Despawn opened portal.
+				}
 			} else {
-				// Spawn entities for summoned character and opened portal.
+				// Spawn summoned character.
 				commands
 					.spawn((
 						Object {
@@ -196,8 +212,8 @@ pub fn animate(
 							rotates: true,
 						},
 						SpatialBundle { ..default() },
-						transform.with_scale(Vec3::ZERO).ease_to(
-							transform.with_scale(Vec3::ONE),
+						summon_transform.with_scale(Vec3::ZERO).ease_to(
+							summon_transform.with_scale(Vec3::ONE),
 							EaseFunction::CubicIn,
 							EasingType::Once {
 								duration: ANIMATION_DURATION,
@@ -219,11 +235,39 @@ pub fn animate(
 							},
 						));
 					});
+				// Spawn opened portal.
+				let portal_transform = Transform::from_xyz(
+					summon.coords.col as f32,
+					0.5 * crate::meshes::PORTAL_HEIGHT,
+					summon.coords.row as f32,
+				);
+				commands.spawn((
+					Object {
+						id: summon.id,
+						rotates: false,
+					},
+					NotShadowCaster,
+					NotShadowReceiver,
+					PbrBundle {
+						mesh: meshes.portal.clone(),
+						material: materials.characters[summon.color.idx()]
+							.clone(),
+						..default()
+					},
+					portal_transform.with_scale(Vec3::ZERO).ease_to(
+						portal_transform.with_scale(Vec3::ONE),
+						EaseFunction::CubicIn,
+						EasingType::Once {
+							duration: ANIMATION_DURATION,
+						},
+					),
+				));
 			}
 		}
-		// TODO: Despawn entities for returned characters and closed portals.
 	}
 }
+
+// TODO: animate_returns
 
 /// Marks an entity to be recursively despawned after a fixed time.
 #[derive(Component, Deref, DerefMut)]

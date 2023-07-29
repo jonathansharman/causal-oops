@@ -35,8 +35,12 @@ fn main() {
 					animation::add_indicators,
 					// Allow indicators to be added/removed in one frame.
 					apply_deferred,
-					animation::clear_indicators,
-					(animation::animate, animation::timed_despawn),
+					(
+						animation::clear_indicators,
+						animation::animate_moves,
+						animation::animate_summons,
+						animation::timed_despawn,
+					),
 				)
 					.chain()
 					.run_if(in_state(GameState::Playing)),
