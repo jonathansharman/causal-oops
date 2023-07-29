@@ -164,43 +164,53 @@ pub fn animate(
 				}
 			}
 		}
-		// Spawn entities for summoned characters and opened portals.
-		for (summoner_id, summon) in change.summons.iter() {
-			let transform = Transform::from_xyz(
-				summon.coords.col as f32,
-				0.5,
-				summon.coords.row as f32,
-			);
-			commands
-				.spawn((
-					Object {
-						id: summon.id,
-						rotates: true,
-					},
-					SpatialBundle { ..default() },
-					transform.with_scale(Vec3::ZERO).ease_to(
-						transform.with_scale(Vec3::ONE),
-						EaseFunction::CubicIn,
-						EasingType::Once {
-							duration: ANIMATION_DURATION,
+		for summon in change.summons.values() {
+			if summon.reversed {
+				// Despawn entities for summoned character and opened portal.
+				for (parent, _, _, object) in &object_query {
+					if object.id == summon.id {
+						commands.entity(parent).despawn_recursive();
+						break;
+					}
+				}
+			} else {
+				// Spawn entities for summoned character and opened portal.
+				let transform = Transform::from_xyz(
+					summon.coords.col as f32,
+					0.5,
+					summon.coords.row as f32,
+				);
+				commands
+					.spawn((
+						Object {
+							id: summon.id,
+							rotates: true,
 						},
-					),
-				))
-				.with_children(|child_builder| {
-					child_builder.spawn((
-						ObjectBody,
-						PbrBundle {
-							mesh: meshes.character.clone(),
-							material: materials.characters[summon.color.idx()]
+						SpatialBundle { ..default() },
+						transform.with_scale(Vec3::ZERO).ease_to(
+							transform.with_scale(Vec3::ONE),
+							EaseFunction::CubicIn,
+							EasingType::Once {
+								duration: ANIMATION_DURATION,
+							},
+						),
+					))
+					.with_children(|child_builder| {
+						child_builder.spawn((
+							ObjectBody,
+							PbrBundle {
+								mesh: meshes.character.clone(),
+								material: materials.characters
+									[summon.color.idx()]
 								.clone(),
-							transform: Transform::from_rotation(
-								Quat::from_rotation_y(-FRAC_PI_2),
-							),
-							..default()
-						},
-					));
-				});
-			// TODO: Handle reverse summons.
+								transform: Transform::from_rotation(
+									Quat::from_rotation_y(-FRAC_PI_2),
+								),
+								..default()
+							},
+						));
+					});
+			}
 		}
 		// TODO: Despawn entities for returned characters and closed portals.
 	}
