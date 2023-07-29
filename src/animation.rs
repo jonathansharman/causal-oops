@@ -8,7 +8,7 @@ use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
 	control::{Action, ControlEvent},
-	level::{ChangeEvent, Id},
+	level::{ChangeEvent, Coords, Id},
 	materials::Materials,
 	meshes::Meshes,
 	models::Models,
@@ -20,6 +20,12 @@ use crate::{
 pub struct Object {
 	pub id: Id,
 	pub rotates: bool,
+}
+
+/// Component for animating a portal in a level.
+#[derive(Component)]
+pub struct Portal {
+	pub coords: Coords,
 }
 
 /// Marks the "body" of an object's animation. Making an `ObjectBody` entity a
@@ -173,6 +179,7 @@ pub fn animate_summons(
 	mut commands: Commands,
 	mut change_events: EventReader<ChangeEvent>,
 	object_query: Query<(Entity, &Object)>,
+	portal_query: Query<(Entity, &Portal)>,
 	meshes: Res<Meshes>,
 	materials: Res<Materials>,
 ) {
@@ -181,6 +188,11 @@ pub fn animate_summons(
 			let summon_transform = Transform::from_xyz(
 				summon.coords.col as f32,
 				0.5,
+				summon.coords.row as f32,
+			);
+			let portal_transform = Transform::from_xyz(
+				summon.coords.col as f32,
+				0.5 * crate::meshes::PORTAL_HEIGHT,
 				summon.coords.row as f32,
 			);
 			if summon.reversed {
@@ -200,8 +212,21 @@ pub fn animate_summons(
 						break;
 					}
 				}
-				for (entity, object) in &object_query {
-					// TODO: Despawn opened portal.
+				// Despawn opened portal.
+				for (entity, portal) in &portal_query {
+					if portal.coords == summon.coords {
+						commands.entity(entity).insert((
+							DespawnTimer::from_duration(ANIMATION_DURATION),
+							portal_transform.with_scale(Vec3::ONE).ease_to(
+								portal_transform.with_scale(Vec3::ZERO),
+								EaseFunction::CubicIn,
+								EasingType::Once {
+									duration: ANIMATION_DURATION,
+								},
+							),
+						));
+						break;
+					}
 				}
 			} else {
 				// Spawn summoned character.
@@ -226,7 +251,7 @@ pub fn animate_summons(
 							PbrBundle {
 								mesh: meshes.character.clone(),
 								material: materials.characters
-									[summon.color.idx()]
+									[summon.summon_color.idx()]
 								.clone(),
 								transform: Transform::from_rotation(
 									Quat::from_rotation_y(-FRAC_PI_2),
@@ -236,22 +261,17 @@ pub fn animate_summons(
 						));
 					});
 				// Spawn opened portal.
-				let portal_transform = Transform::from_xyz(
-					summon.coords.col as f32,
-					0.5 * crate::meshes::PORTAL_HEIGHT,
-					summon.coords.row as f32,
-				);
 				commands.spawn((
-					Object {
-						id: summon.id,
-						rotates: false,
+					Portal {
+						coords: summon.coords,
 					},
 					NotShadowCaster,
 					NotShadowReceiver,
 					PbrBundle {
 						mesh: meshes.portal.clone(),
-						material: materials.characters[summon.color.idx()]
-							.clone(),
+						material: materials.characters
+							[summon.portal_color.idx()]
+						.clone(),
 						..default()
 					},
 					portal_transform.with_scale(Vec3::ZERO).ease_to(

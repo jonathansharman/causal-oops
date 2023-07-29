@@ -74,29 +74,14 @@ fn spawn_level(
 	for row in 0..level.height() {
 		for col in 0..level.width() {
 			match level.tile(Coords::new(row as i32, col as i32)) {
-				Tile::Floor { portal_summoner } => {
-					let scene = match portal_summoner {
-						Some(summoner_id) => {
-							let color = level
-								.characters()
-								.iter()
-								.find_map(|(id, c)| {
-									(*id == summoner_id).then_some(c.color)
-								})
-								.unwrap();
-							// TODO: Portal models.
-							models.floor.clone()
-						}
-						None => models.floor.clone(),
-					};
-					commands.spawn(SceneBundle {
-						scene,
-						transform: Transform::from_xyz(
-							col as f32, -0.5, row as f32,
-						),
-						..default()
-					})
-				}
+				// Assume a fresh level has no open portals.
+				Tile::Floor { .. } => commands.spawn(SceneBundle {
+					scene: models.floor.clone(),
+					transform: Transform::from_xyz(
+						col as f32, -0.5, row as f32,
+					),
+					..default()
+				}),
 				Tile::Wall => commands.spawn(SceneBundle {
 					scene: models.wall.clone(),
 					transform: Transform::from_xyz(col as f32, 0.5, row as f32),

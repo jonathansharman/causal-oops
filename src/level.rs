@@ -121,7 +121,9 @@ impl Add<Offset> for Coords {
 /// A level tile.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Tile {
-	Floor { portal_summoner: Option<Id> },
+	Floor {
+		portal_color: Option<CharacterColor>,
+	},
 	Wall,
 }
 
@@ -597,14 +599,19 @@ impl Level {
 			.into_iter()
 			.map(|(summoner_id, offset)| {
 				let summon_id = self.new_object_id();
+				let summon_color = self.new_color();
 				let summoner = &self.objects_by_id[&summoner_id];
+				let Object::Character(character) = summoner.object else {
+					panic!("non-character summoner");
+				};
 				(
 					summoner_id,
 					Summon {
 						reversed: false,
 						id: summon_id,
+						summon_color,
 						coords: summoner.coords + offset,
-						color: self.new_color(),
+						portal_color: character.color,
 					},
 				)
 			})
@@ -658,7 +665,7 @@ impl Level {
 				self.set_tile(
 					ret.coords,
 					Tile::Floor {
-						portal_summoner: Some(*returner_id),
+						portal_color: Some(ret.character.color),
 					},
 				);
 				// Resummon character.
@@ -670,12 +677,7 @@ impl Level {
 				});
 			} else {
 				// Close portal.
-				self.set_tile(
-					ret.coords,
-					Tile::Floor {
-						portal_summoner: None,
-					},
-				);
+				self.set_tile(ret.coords, Tile::Floor { portal_color: None });
 				// Remove returning character.
 				self.remove_at(ret.coords);
 			}
@@ -705,9 +707,7 @@ impl Level {
 				// Close portal.
 				self.set_tile(
 					summon.coords,
-					Tile::Floor {
-						portal_summoner: None,
-					},
+					Tile::Floor { portal_color: None },
 				);
 				// Unlink summoner from portal.
 				for (id, c) in self.characters.iter_mut() {
@@ -723,7 +723,7 @@ impl Level {
 				self.set_tile(
 					summon.coords,
 					Tile::Floor {
-						portal_summoner: Some(*summoner_id),
+						portal_color: Some(summon.portal_color),
 					},
 				);
 				// Update summoner's linked portal.
@@ -737,7 +737,7 @@ impl Level {
 				self.spawn(LevelObject {
 					id: summon.id,
 					object: Object::Character(Character {
-						color: summon.color,
+						color: summon.summon_color,
 						sliding: false,
 						portal_coords: None,
 					}),
@@ -820,8 +820,8 @@ impl Debug for Level {
 				let tile = self.tile(coords);
 				let object = self.object(coords);
 				f.write_char(match tile {
-					Tile::Floor { portal_summoner } => {
-						if portal_summoner.is_some() {
+					Tile::Floor { portal_color } => {
+						if portal_color.is_some() {
 							'o'
 						} else {
 							'.'
@@ -886,9 +886,14 @@ impl Move {
 #[derive(Clone)]
 pub struct Summon {
 	pub reversed: bool,
+	/// The ID of the summoned character.
 	pub id: Id,
+	/// The color of the summoned character.
+	pub summon_color: CharacterColor,
+	/// The coordinates of the summoned character and portal.
 	pub coords: Coords,
-	pub color: CharacterColor,
+	/// The color of the summoner and portal.
+	pub portal_color: CharacterColor,
 }
 
 impl Summon {
@@ -1052,9 +1057,7 @@ fn make_level(map: &str) -> Level {
 			let (tile, object) = (tile_object[0], tile_object[1]);
 			tiles.push(match tile {
 				b'#' => Tile::Wall,
-				_ => Tile::Floor {
-					portal_summoner: None,
-				},
+				_ => Tile::Floor { portal_color: None },
 			});
 			if let Some(object) = match object {
 				b'0'..=b'7' => Some(Object::Character(Character::new(
