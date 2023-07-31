@@ -132,7 +132,7 @@ pub enum Tile {
 pub struct Id(pub u32);
 
 /// Distinguishes between characters and links them to their return portals.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum CharacterColor {
 	Green,
@@ -167,9 +167,13 @@ impl CharacterColor {
 	}
 }
 
-impl From<u8> for CharacterColor {
-	fn from(value: u8) -> Self {
-		match value {
+impl<T> From<T> for CharacterColor
+where
+	T: Into<usize>,
+{
+	fn from(value: T) -> Self {
+		let idx: usize = value.into();
+		match idx {
 			0 => CharacterColor::Green,
 			1 => CharacterColor::Red,
 			2 => CharacterColor::Blue,
@@ -178,7 +182,7 @@ impl From<u8> for CharacterColor {
 			5 => CharacterColor::Cyan,
 			6 => CharacterColor::Black,
 			7 => CharacterColor::White,
-			_ => panic!("color out of bounds: {value}"),
+			_ => panic!("color out of bounds: {idx}"),
 		}
 	}
 }
@@ -249,7 +253,7 @@ pub struct Level {
 	tiles: Vec<Tile>,
 	objects_by_id: HashMap<Id, LevelObject>,
 	object_ids_by_coords: HashMap<Coords, Id>,
-	characters: Vec<(Id, Character)>,
+	character_ids: Vec<Id>,
 	next_object_id: Id,
 	/// History of the level's state, for seeking backward and forward in time.
 	history: Vec<BiChange>,
@@ -296,9 +300,34 @@ impl Level {
 		self.objects_by_id.values()
 	}
 
+	/// A reference to the character with the given `id`. Panics if there is no
+	/// character with that ID.
+	pub fn character(&self, id: &Id) -> &Character {
+		let Object::Character(character) = &self.objects_by_id[id].object else {
+			panic!("character not found");
+		};
+		character
+	}
+
+	/// A mutable reference to the character with the given `id`. Panics if
+	/// there is no character with that ID.
+	pub fn character_mut(&mut self, id: &Id) -> &mut Character {
+		let Object::Character(character) =
+			&mut self.objects_by_id.get_mut(id).unwrap().object
+		else {
+			panic!("character not found");
+		};
+		character
+	}
+
 	/// Characters in the level.
-	pub fn characters(&self) -> &[(Id, Character)] {
-		&self.characters
+	pub fn characters(&self) -> impl Iterator<Item = (&Id, &Character)> {
+		self.character_ids.iter().map(|id| (id, self.character(id)))
+	}
+
+	/// Number of characters in the level.
+	pub fn character_count(&self) -> usize {
+		self.character_ids.len()
 	}
 
 	/// Updates the level by making the `actors` act, returning the resulting
@@ -588,6 +617,21 @@ impl Level {
 		moves
 	}
 
+	/// Computes the list of colors not yet taken by any character. The results
+	/// are deterministic.
+	fn get_available_colors(&self) -> Vec<CharacterColor> {
+		let character_colors = HashSet::from_iter(
+			self.characters().map(|(_, character)| character.color),
+		);
+		(0..CharacterColor::COUNT)
+			.rev()
+			.filter_map(|idx| {
+				let color = idx.into();
+				(!character_colors.contains(&color)).then_some(color)
+			})
+			.collect()
+	}
+
 	/// Computes the set of [`Summon`]s resulting from the given `summoners`.
 	fn get_summons(
 		&mut self,
@@ -595,25 +639,28 @@ impl Level {
 	) -> HashMap<Id, Summon> {
 		// TODO: As a proof of concept, this currently just summons into the
 		// adjacent tile.
+		let mut available_colors = self.get_available_colors();
 		summoners
 			.into_iter()
-			.map(|(summoner_id, offset)| {
+			.filter_map(|(summoner_id, offset)| {
+				let Some(summon_color) = available_colors.pop() else {
+					return None;
+				};
 				let summon_id = self.new_object_id();
-				let summon_color = self.new_color();
-				let summoner = &self.objects_by_id[&summoner_id];
-				let Object::Character(character) = summoner.object else {
+				let level_summoner = &self.objects_by_id[&summoner_id];
+				let Object::Character(summoner) = level_summoner.object else {
 					panic!("non-character summoner");
 				};
-				(
+				Some((
 					summoner_id,
 					Summon {
 						reversed: false,
 						id: summon_id,
 						summon_color,
-						coords: summoner.coords + offset,
-						portal_color: character.color,
+						coords: level_summoner.coords + offset,
+						portal_color: summoner.color,
 					},
-				)
+				))
 			})
 			.collect()
 	}
@@ -702,7 +749,12 @@ impl Level {
 
 	/// Applies `summons` to the level's state without affecting history.
 	fn apply_summons(&mut self, summons: &HashMap<Id, Summon>) {
-		for (summoner_id, summon) in summons {
+		// Iterate over the characters rather than the summons so that the turn
+		// order of summoned characters is deterministic.
+		for summoner_id in self.character_ids.clone() {
+			let Some(summon) = summons.get(&summoner_id).cloned() else {
+				continue;
+			};
 			if summon.reversed {
 				// Close portal.
 				self.set_tile(
@@ -710,12 +762,7 @@ impl Level {
 					Tile::Floor { portal_color: None },
 				);
 				// Unlink summoner from portal.
-				for (id, c) in self.characters.iter_mut() {
-					if id == summoner_id {
-						c.portal_coords = None;
-						break;
-					}
-				}
+				self.character_mut(&summoner_id).portal_coords = None;
 				// Remove summoned character.
 				self.remove_at(summon.coords);
 			} else {
@@ -727,12 +774,8 @@ impl Level {
 					},
 				);
 				// Update summoner's linked portal.
-				for (id, c) in self.characters.iter_mut() {
-					if id == summoner_id {
-						c.portal_coords = Some(summon.coords);
-						break;
-					}
-				}
+				self.character_mut(&summoner_id).portal_coords =
+					Some(summon.coords);
 				// Summon character from the future.
 				self.spawn(LevelObject {
 					id: summon.id,
@@ -770,19 +813,13 @@ impl Level {
 		id
 	}
 
-	/// The next available character color.
-	fn new_color(&mut self) -> CharacterColor {
-		// TODO: cycle through colors.
-		CharacterColor::Black
-	}
-
 	/// Spawns `level_object` into the level. The caller is responsible for
 	/// ensuring `level_object`'s ID is currently available.
 	fn spawn(&mut self, level_object: LevelObject) {
 		self.object_ids_by_coords
 			.insert(level_object.coords, level_object.id);
-		if let Object::Character(c) = level_object.object {
-			self.characters.push((level_object.id, c));
+		if let Object::Character(..) = level_object.object {
+			self.character_ids.push(level_object.id);
 		}
 		self.objects_by_id.insert(level_object.id, level_object);
 	}
@@ -790,8 +827,8 @@ impl Level {
 	/// Removes the object at `coords`, if there is one.
 	fn remove_at(&mut self, coords: Coords) {
 		if let Some(removed_id) = self.object_ids_by_coords.remove(&coords) {
-			self.characters.retain(|&(id, _)| id != removed_id);
 			self.objects_by_id.remove(&removed_id);
+			self.character_ids.retain(|&id| id != removed_id);
 		}
 	}
 }
@@ -1029,8 +1066,8 @@ pub fn test_level() -> Level {
 	make_level(
 		r#"# # # # # # # # # 
 		   # . .0. . . . . # 
-		   # . .1. . . . . # 
-		   # . .2. . . . . # 
+		   # . . . . . . . # 
+		   # . . . . . . . # 
 		   # . .X.Y.Z. . . # 
 		   # . .X.Y. . . . # 
 		   # . .X. . . . . # 
@@ -1092,7 +1129,7 @@ fn make_level(map: &str) -> Level {
 		tiles,
 		objects_by_id: HashMap::new(),
 		object_ids_by_coords: HashMap::new(),
-		characters: Vec::new(),
+		character_ids: Vec::new(),
 		next_object_id: Id(0),
 		history: Vec::new(),
 		turn: 0,
@@ -1123,12 +1160,8 @@ mod tests {
 	/// number of characters in the level. Actions will be performed in
 	/// character index order.
 	fn perform<const N: usize>(level: &mut Level, actions: [Action; N]) {
-		let character_actions = level
-			.characters
-			.iter()
-			.zip(actions)
-			.map(|((id, _), action)| (*id, action))
-			.collect();
+		let character_actions =
+			level.character_ids.iter().copied().zip(actions).collect();
 		level.update(character_actions);
 	}
 

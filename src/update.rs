@@ -32,7 +32,7 @@ pub fn update(
 			ControlEvent::Act(character_action) => {
 				state.queue.push(*character_action);
 				// If all characters have queued actions, execute the turn.
-				if state.queue.len() == level.characters().len() {
+				if state.queue.len() == level.character_count() {
 					let actions = Vec::from_iter(state.queue.drain(..));
 					let change_event = level.update(actions);
 					change_events.send(change_event);
@@ -52,7 +52,10 @@ pub fn update(
 			}
 		}
 		// Send the next actor to the control and animation systems.
-		let (id, character) = level.characters()[state.queue.len()];
+		let (&id, &character) = level
+			.characters()
+			.nth(state.queue.len())
+			.expect("character out of bounds");
 		next_actors.send(NextActor { id, character });
 	}
 }

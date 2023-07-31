@@ -199,7 +199,7 @@ fn create_level(
 	let level = level::test_level();
 	spawn_level(&mut commands, &models, &meshes, &materials, &level);
 	// Kick off the control loop by sending the first actor, if there is one.
-	if let Some(&(id, character)) = level.characters().first() {
+	if let Some((&id, &character)) = level.characters().next() {
 		next_actors.send(NextActor { id, character });
 	}
 
