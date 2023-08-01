@@ -403,6 +403,7 @@ impl Level {
 					id,
 					Return {
 						reversed: false,
+						id,
 						character,
 						coords: returner.coords,
 						angle: returner.angle,
@@ -884,10 +885,11 @@ impl Debug for Level {
 /// A character's return to the past.
 #[derive(Clone)]
 pub struct Return {
-	reversed: bool,
-	character: Character,
-	coords: Coords,
-	angle: f32,
+	pub reversed: bool,
+	pub id: Id,
+	pub character: Character,
+	pub coords: Coords,
+	pub angle: f32,
 }
 
 impl Return {

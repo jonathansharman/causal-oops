@@ -138,6 +138,116 @@ pub fn clear_indicators(
 
 const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
+pub fn animate_returns(
+	mut commands: Commands,
+	mut change_events: EventReader<ChangeEvent>,
+	object_query: Query<(Entity, &Object)>,
+	portal_query: Query<(Entity, &Portal)>,
+	meshes: Res<Meshes>,
+	materials: Res<Materials>,
+) {
+	for change in change_events.iter() {
+		for ret in change.returns.values() {
+			let returner_transform = Transform::from_xyz(
+				ret.coords.col as f32,
+				0.5,
+				ret.coords.row as f32,
+			);
+			let portal_transform = Transform::from_xyz(
+				ret.coords.col as f32,
+				0.5 * crate::meshes::PORTAL_HEIGHT,
+				ret.coords.row as f32,
+			);
+			if ret.reversed {
+				// Spawn returning character.
+				commands
+					.spawn((
+						Object {
+							id: ret.id,
+							rotates: true,
+						},
+						SpatialBundle { ..default() },
+						returner_transform.with_scale(Vec3::ZERO).ease_to(
+							returner_transform.with_scale(Vec3::ONE),
+							EaseFunction::CubicIn,
+							EasingType::Once {
+								duration: ANIMATION_DURATION,
+							},
+						),
+					))
+					.with_children(|child_builder| {
+						child_builder.spawn((
+							ObjectBody,
+							PbrBundle {
+								mesh: meshes.character.clone(),
+								material: materials.characters
+									[ret.character.color.idx()]
+								.clone(),
+								transform: Transform::from_rotation(
+									Quat::from_rotation_y(-FRAC_PI_2),
+								),
+								..default()
+							},
+						));
+					});
+				// Spawn closed portal.
+				commands.spawn((
+					Portal { coords: ret.coords },
+					NotShadowCaster,
+					NotShadowReceiver,
+					PbrBundle {
+						mesh: meshes.portal.clone(),
+						material: materials.characters
+							[ret.character.color.idx()]
+						.clone(),
+						..default()
+					},
+					portal_transform.with_scale(Vec3::ZERO).ease_to(
+						portal_transform.with_scale(Vec3::ONE),
+						EaseFunction::CubicIn,
+						EasingType::Once {
+							duration: ANIMATION_DURATION,
+						},
+					),
+				));
+			} else {
+				// Despawn returning character.
+				for (entity, object) in &object_query {
+					if object.id == ret.id {
+						commands.entity(entity).insert((
+							DespawnTimer::from_duration(ANIMATION_DURATION),
+							returner_transform.with_scale(Vec3::ONE).ease_to(
+								returner_transform.with_scale(Vec3::ZERO),
+								EaseFunction::CubicIn,
+								EasingType::Once {
+									duration: ANIMATION_DURATION,
+								},
+							),
+						));
+						break;
+					}
+				}
+				// Despawn closed portal.
+				for (entity, portal) in &portal_query {
+					if portal.coords == ret.coords {
+						commands.entity(entity).insert((
+							DespawnTimer::from_duration(ANIMATION_DURATION),
+							portal_transform.with_scale(Vec3::ONE).ease_to(
+								portal_transform.with_scale(Vec3::ZERO),
+								EaseFunction::CubicIn,
+								EasingType::Once {
+									duration: ANIMATION_DURATION,
+								},
+							),
+						));
+						break;
+					}
+				}
+			}
+		}
+	}
+}
+
 pub fn animate_moves(
 	mut commands: Commands,
 	mut change_events: EventReader<ChangeEvent>,
@@ -286,8 +396,6 @@ pub fn animate_summons(
 		}
 	}
 }
-
-// TODO: animate_returns
 
 /// Marks an entity to be recursively despawned after a fixed time.
 #[derive(Component, Deref, DerefMut)]

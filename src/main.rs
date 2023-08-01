@@ -37,6 +37,7 @@ fn main() {
 					apply_deferred,
 					(
 						animation::clear_indicators,
+						animation::animate_returns,
 						animation::animate_moves,
 						animation::animate_summons,
 						animation::timed_despawn,
