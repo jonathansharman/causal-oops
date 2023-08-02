@@ -32,16 +32,18 @@ fn main() {
 				(
 					control::control,
 					update::update,
+					(
+						animation::animate_returnings,
+						animation::animate_moves,
+						animation::animate_summonings,
+						animation::timed_despawn,
+					),
+					// Allow adding indicators on newly spawned entities.
+					apply_deferred,
 					animation::add_indicators,
 					// Allow indicators to be added/removed in one frame.
 					apply_deferred,
-					(
-						animation::clear_indicators,
-						animation::animate_returns,
-						animation::animate_moves,
-						animation::animate_summons,
-						animation::timed_despawn,
-					),
+					animation::clear_indicators,
 				)
 					.chain()
 					.run_if(in_state(GameState::Playing)),
@@ -74,7 +76,7 @@ fn spawn_level(
 	// Spawn tile entities.
 	for row in 0..level.height() {
 		for col in 0..level.width() {
-			match level.tile(Coords::new(row as i32, col as i32)) {
+			match level.tile_at(Coords::new(row as i32, col as i32)) {
 				// Assume a fresh level has no open portals.
 				Tile::Floor { .. } => commands.spawn(SceneBundle {
 					scene: models.floor.clone(),
@@ -93,7 +95,7 @@ fn spawn_level(
 	}
 
 	// Spawn object entities.
-	for level_object in level.iter_objects() {
+	for level_object in level.iter_level_objects() {
 		let Coords { row, col } = level_object.coords;
 		let spatial_bundle = SpatialBundle {
 			transform: Transform::from_xyz(col as f32, 0.5, row as f32),
@@ -200,7 +202,7 @@ fn create_level(
 	let level = level::test_level();
 	spawn_level(&mut commands, &models, &meshes, &materials, &level);
 	// Kick off the control loop by sending the first actor, if there is one.
-	if let Some((&id, &character)) = level.characters().next() {
+	if let Some((&id, &character)) = level.characters_by_id().next() {
 		next_actors.send(NextActor { id, character });
 	}
 

@@ -53,7 +53,7 @@ pub fn update(
 		}
 		// Send the next actor to the control and animation systems.
 		let (&id, &character) = level
-			.characters()
+			.characters_by_id()
 			.nth(state.queue.len())
 			.expect("character out of bounds");
 		next_actors.send(NextActor { id, character });
