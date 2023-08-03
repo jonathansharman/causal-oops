@@ -86,7 +86,7 @@ pub enum ControlEvent {
 pub struct ControlState {
 	input_buffer: VecDeque<(GameButton, ButtonState)>,
 	next_actor: Option<NextActor>,
-	summoning: bool,
+	act_button_held: bool,
 }
 
 /// Consumes keyboard/gamepad input and produces higher-level control events to
@@ -128,7 +128,7 @@ pub fn control(
 				Some(ControlEvent::Redo)
 			}
 			(GameButton::Up, ButtonState::Pressed) => {
-				if state.summoning {
+				if actor.character.can_summon() && state.act_button_held {
 					act(Action::Summon(Offset::UP))
 				} else if actor.character.can_push() {
 					act(Action::Push(Offset::UP))
@@ -137,7 +137,7 @@ pub fn control(
 				}
 			}
 			(GameButton::Left, ButtonState::Pressed) => {
-				if state.summoning {
+				if actor.character.can_summon() && state.act_button_held {
 					act(Action::Summon(Offset::LEFT))
 				} else if actor.character.can_push() {
 					act(Action::Push(Offset::LEFT))
@@ -146,7 +146,7 @@ pub fn control(
 				}
 			}
 			(GameButton::Down, ButtonState::Pressed) => {
-				if state.summoning {
+				if actor.character.can_summon() && state.act_button_held {
 					act(Action::Summon(Offset::DOWN))
 				} else if actor.character.can_push() {
 					act(Action::Push(Offset::DOWN))
@@ -155,7 +155,7 @@ pub fn control(
 				}
 			}
 			(GameButton::Right, ButtonState::Pressed) => {
-				if state.summoning {
+				if actor.character.can_summon() && state.act_button_held {
 					act(Action::Summon(Offset::RIGHT))
 				} else if actor.character.can_push() {
 					act(Action::Push(Offset::RIGHT))
@@ -168,26 +168,27 @@ pub fn control(
 				// The Act button is contextual. If the actor has the ability to
 				// return, it's the return button. If it has the ability to
 				// summon, it's a modifier button.
-				if actor.character.can_return() {
-					act(Action::Return)
+				if !state.act_button_held {
+					state.act_button_held = true;
+					actor
+						.character
+						.can_return()
+						.then(|| act(Action::Return))
+						.flatten()
 				} else {
-					if actor.character.can_summon() {
-						state.summoning = true;
-					}
 					None
 				}
 			}
 			(GameButton::Act, ButtonState::Released) => {
-				state.summoning = false;
+				state.act_button_held = false;
 				None
 			}
 			_ => None,
 		};
-		// If there was a control event, emit it, reset state, and return so
-		// that the update and animation systems can respond.
+		// If there was a control event, emit it, reset the next actor, and
+		// return so that the update and animation systems can respond.
 		if let Some(control_event) = control_event {
 			state.next_actor = None;
-			state.summoning = false;
 			control_events.send(control_event);
 			return;
 		}
