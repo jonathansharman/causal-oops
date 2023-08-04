@@ -55,7 +55,7 @@ pub fn add_indicators(
 	for NextActor { id: actor_id, .. } in next_actors.iter() {
 		// Clear any existing choosing indicators.
 		for entity in &choosing_query {
-			commands.entity(entity).despawn();
+			commands.entity(entity).despawn_recursive();
 		}
 		// Spawn a new choosing indicator.
 		let transform = Transform::from_translation(0.5 * Vec3::Y);
@@ -131,7 +131,7 @@ pub fn clear_indicators(
 ) {
 	if !change_events.is_empty() {
 		for entity in &choice_query {
-			commands.entity(entity).despawn();
+			commands.entity(entity).despawn_recursive();
 		}
 	}
 }
