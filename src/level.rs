@@ -191,7 +191,6 @@ where
 /// A playable character.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Character {
-	pub summoner_id: Option<Id>,
 	pub color: CharacterColor,
 	pub sliding: bool,
 	pub portal_coords: Option<Coords>,
@@ -685,7 +684,6 @@ impl Level {
 						summon: LevelCharacter {
 							id: summon_id,
 							character: Character {
-								summoner_id: Some(summoner_id),
 								color: summon_color,
 								sliding: false,
 								portal_coords: None,
@@ -1082,7 +1080,6 @@ fn make_level(map: &str) -> Level {
 			});
 			if let Some(object) = match object {
 				b'0'..=b'7' => Some(Object::Character(Character {
-					summoner_id: None,
 					color: CharacterColor::from(object - b'0'),
 					sliding: false,
 					portal_coords: None,
