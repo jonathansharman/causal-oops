@@ -364,8 +364,12 @@ impl Level {
 	/// Updates the level by making the `actors` act, returning the resulting
 	/// (possibly trivial) [`Change`].
 	///
-	/// Actions are resolved in three phases: (1) return, (2) push, (3) summon.
-	/// Actions within each phase are simultaneous.
+	/// Actions are resolved in three phases: (1) return, (2) push, and (3)
+	/// summon. Actions within each phase are simultaneous.
+	///
+	/// Any two summoners must summon into disjoint coordinates. This
+	/// precondition will generally be trivially satisfied since there should be
+	/// at most one summoner per update.
 	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> ChangeEvent {
 		// Map pushers and summoners to their offsets.
 		let (pushers, summoners, returners) = {
@@ -651,7 +655,6 @@ impl Level {
 				.map(|(_, character)| character.color),
 		);
 		(0..CharacterColor::COUNT)
-			.rev()
 			.filter_map(|idx| {
 				let color = idx.into();
 				(!character_colors.contains(&color)).then_some(color)
@@ -660,43 +663,69 @@ impl Level {
 	}
 
 	/// Computes the set of [`Summoning`]s resulting from the given `summoners`.
+	///
+	/// Any two summoners must summon into disjoint coordinates. This
+	/// precondition will generally be trivially satisfied since there should be
+	/// at most one summoner per update.
 	fn get_summonings(
 		&mut self,
 		summoners: HashMap<Id, Offset>,
 	) -> HashMap<Id, Summoning> {
-		// TODO: As a proof of concept, this currently just summons into the
-		// adjacent tile.
-		let mut available_colors = self.get_available_colors();
 		summoners
 			.into_iter()
-			.filter_map(|(summoner_id, offset)| {
-				let Some(summon_color) = available_colors.pop() else {
-					return None;
-				};
+			.zip(self.get_available_colors())
+			.filter_map(|((summoner_id, offset), summon_color)| {
 				let summon_id = self.new_object_id();
-				let level_summoner = &self.objects_by_id[&summoner_id];
-				let Object::Character(summoner) = level_summoner.object else {
-					panic!("non-character summoner");
-				};
-				Some((
-					summoner_id,
-					Summoning {
-						summon: LevelCharacter {
-							id: summon_id,
-							character: Character {
-								color: summon_color,
-								sliding: false,
-								portal_coords: None,
+				let level_summoner = self.level_character_by_id(&summoner_id);
+				self.farthest_open_tile(level_summoner.coords, offset).map(
+					|coords| {
+						(
+							summoner_id,
+							Summoning {
+								summon: LevelCharacter {
+									id: summon_id,
+									character: Character {
+										color: summon_color,
+										sliding: false,
+										portal_coords: None,
+									},
+									coords,
+									angle: -FRAC_PI_2,
+								},
+								linked_id: summoner_id,
+								portal_color: level_summoner.character.color,
 							},
-							coords: level_summoner.coords + offset,
-							angle: -FRAC_PI_2,
-						},
-						linked_id: summoner_id,
-						portal_color: summoner.color,
+						)
 					},
-				))
+				)
 			})
 			.collect()
+	}
+
+	/// The empty floor tile most distant from `start` incrementing by `offset`.
+	fn farthest_open_tile(
+		&self,
+		start: Coords,
+		offset: Offset,
+	) -> Option<Coords> {
+		let mut result = None;
+		let mut coords = start;
+		loop {
+			coords += offset;
+			if coords.row < 0
+				|| coords.row >= self.height() as i32
+				|| coords.col < 0
+				|| coords.col >= self.width() as i32
+			{
+				break;
+			}
+			if let (Tile::Floor { portal_color: None }, None) =
+				(self.tile_at(coords), self.object_at(coords))
+			{
+				result = Some(coords);
+			}
+		}
+		result
 	}
 
 	/// If possible, moves to the previous level state and returns the resulting
