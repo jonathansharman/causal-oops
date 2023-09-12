@@ -332,7 +332,8 @@ impl Level {
 	/// A reference to the character with the given `id`. Panics if there is no
 	/// character with that ID.
 	pub fn character_by_id(&self, id: &Id) -> &Character {
-		let Object::Character(character) = &self.objects_by_id[id].object else {
+		let Object::Character(character) = &self.objects_by_id[id].object
+		else {
 			panic!("character not found");
 		};
 		character

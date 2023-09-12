@@ -111,7 +111,9 @@ pub fn control(
 		state.next_actor = Some(*next_actor);
 	}
 	// Get the next actor or return if there's no actor to control.
-	let Some(actor) = state.next_actor else { return };
+	let Some(actor) = state.next_actor else {
+		return;
+	};
 
 	let act = |action: Action| -> Option<ControlEvent> {
 		Some(ControlEvent::Act((actor.id, action)))

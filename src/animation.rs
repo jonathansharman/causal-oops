@@ -200,7 +200,9 @@ pub fn animate_moves(
 ) {
 	for change in change_events.iter() {
 		for (parent, children, from, object) in &object_query {
-			let Some(mv) = change.moves.get(&object.id) else { continue };
+			let Some(mv) = change.moves.get(&object.id) else {
+				continue;
+			};
 			commands.entity(parent).insert(from.ease_to(
 				Transform::from(mv.to_coords),
 				EaseFunction::CubicInOut,
