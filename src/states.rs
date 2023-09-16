@@ -4,6 +4,6 @@ use bevy::prelude::*;
 pub enum GameState {
 	#[default]
 	Loading,
-	CreatingLevel,
+	SpawningLevel,
 	Playing,
 }

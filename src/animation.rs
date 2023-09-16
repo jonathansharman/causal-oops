@@ -8,7 +8,7 @@ use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
 	control::{Action, ControlEvent},
-	level::{ChangeEvent, Coords, Id},
+	level::{ChangeEvent, Coords, Id, LevelEntity},
 	materials::Materials,
 	meshes::Meshes,
 	models::Models,
@@ -252,6 +252,7 @@ pub fn animate_summonings(
 			// Spawn summoned character.
 			commands
 				.spawn((
+					LevelEntity,
 					Object {
 						id: summoning.summon.id,
 						rotates: true,
@@ -282,6 +283,7 @@ pub fn animate_summonings(
 				});
 			// Spawn opened portal.
 			commands.spawn((
+				LevelEntity,
 				Portal {
 					coords: summoning.summon.coords,
 				},

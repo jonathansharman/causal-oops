@@ -1,10 +1,13 @@
 use std::f32::consts::FRAC_PI_2;
 
-use bevy::prelude::*;
+use bevy::{
+	input::{keyboard::KeyboardInput, ButtonState},
+	prelude::*,
+};
 use bevy_easings::EasingsPlugin;
 
 use control::ControlEvent;
-use level::{ChangeEvent, Coords, Level, Object, Tile};
+use level::{ChangeEvent, Coords, Level, LevelEntity, Object, Tile};
 use materials::Materials;
 use meshes::Meshes;
 use models::{load_gltf_meshes, Models};
@@ -28,7 +31,7 @@ fn main() {
 			Update,
 			(
 				load_gltf_meshes.run_if(in_state(GameState::Loading)),
-				create_level.run_if(in_state(GameState::CreatingLevel)),
+				spawn_level.run_if(in_state(GameState::SpawningLevel)),
 				(
 					control::control,
 					update::update,
@@ -44,6 +47,7 @@ fn main() {
 					// Allow indicators to be added/removed in one frame.
 					apply_deferred,
 					animation::clear_indicators,
+					change_level,
 				)
 					.chain()
 					.run_if(in_state(GameState::Playing)),
@@ -53,6 +57,7 @@ fn main() {
 		.add_event::<ControlEvent>()
 		.add_event::<ChangeEvent>()
 		.insert_resource(ClearColor(Color::BLACK))
+		.insert_resource(level::test_level())
 		.add_plugins((
 			DefaultPlugins.set(WindowPlugin {
 				primary_window: Some(Window {
@@ -66,30 +71,52 @@ fn main() {
 		.run();
 }
 
+// Loads and inserts models, meshes, and materials.
+fn setup(
+	mut commands: Commands,
+	mut asset_server: ResMut<AssetServer>,
+	mut mesh_assets: ResMut<Assets<Mesh>>,
+	mut material_assets: ResMut<Assets<StandardMaterial>>,
+) {
+	commands.insert_resource(Models::load(&mut asset_server));
+	commands.insert_resource(Meshes::load(&mut mesh_assets));
+	commands.insert_resource(Materials::load(&mut material_assets));
+}
+
 fn spawn_level(
-	commands: &mut Commands,
-	models: &Models,
-	meshes: &Meshes,
-	materials: &Materials,
-	level: &Level,
+	mut commands: Commands,
+	level: Res<Level>,
+	models: Res<Models>,
+	meshes: Res<Meshes>,
+	materials: Res<Materials>,
+	mut next_actors: EventWriter<NextActor>,
+	mut next_state: ResMut<NextState<GameState>>,
 ) {
 	// Spawn tile entities.
 	for row in 0..level.height() {
 		for col in 0..level.width() {
 			match level.tile_at(Coords::new(row as i32, col as i32)) {
 				// Assume a fresh level has no open portals.
-				Tile::Floor { .. } => commands.spawn(SceneBundle {
-					scene: models.floor.clone(),
-					transform: Transform::from_xyz(
-						col as f32, -0.5, row as f32,
-					),
-					..default()
-				}),
-				Tile::Wall => commands.spawn(SceneBundle {
-					scene: models.wall.clone(),
-					transform: Transform::from_xyz(col as f32, 0.5, row as f32),
-					..default()
-				}),
+				Tile::Floor { .. } => commands.spawn((
+					LevelEntity,
+					SceneBundle {
+						scene: models.floor.clone(),
+						transform: Transform::from_xyz(
+							col as f32, -0.5, row as f32,
+						),
+						..default()
+					},
+				)),
+				Tile::Wall => commands.spawn((
+					LevelEntity,
+					SceneBundle {
+						scene: models.wall.clone(),
+						transform: Transform::from_xyz(
+							col as f32, 0.5, row as f32,
+						),
+						..default()
+					},
+				)),
 			};
 		}
 	}
@@ -104,6 +131,7 @@ fn spawn_level(
 		match level_object.object {
 			Object::Character(c) => commands
 				.spawn((
+					LevelEntity,
 					animation::Object {
 						id: level_object.id,
 						rotates: true,
@@ -126,6 +154,7 @@ fn spawn_level(
 				}),
 			Object::WoodenCrate => commands
 				.spawn((
+					LevelEntity,
 					animation::Object {
 						id: level_object.id,
 						rotates: false,
@@ -143,6 +172,7 @@ fn spawn_level(
 				}),
 			Object::SteelCrate => commands
 				.spawn((
+					LevelEntity,
 					animation::Object {
 						id: level_object.id,
 						rotates: false,
@@ -160,6 +190,7 @@ fn spawn_level(
 				}),
 			Object::StoneBlock => commands
 				.spawn((
+					LevelEntity,
 					animation::Object {
 						id: level_object.id,
 						rotates: false,
@@ -177,61 +208,70 @@ fn spawn_level(
 				}),
 		};
 	}
-}
-
-// Loads and inserts models, meshes, and materials.
-fn setup(
-	mut commands: Commands,
-	mut asset_server: ResMut<AssetServer>,
-	mut mesh_assets: ResMut<Assets<Mesh>>,
-	mut material_assets: ResMut<Assets<StandardMaterial>>,
-) {
-	commands.insert_resource(Models::load(&mut asset_server));
-	commands.insert_resource(Meshes::load(&mut mesh_assets));
-	commands.insert_resource(Materials::load(&mut material_assets));
-}
-
-fn create_level(
-	mut commands: Commands,
-	models: Res<Models>,
-	meshes: Res<Meshes>,
-	materials: Res<Materials>,
-	mut next_actors: EventWriter<NextActor>,
-	mut next_state: ResMut<NextState<GameState>>,
-) {
-	let level = level::test_level();
-	spawn_level(&mut commands, &models, &meshes, &materials, &level);
-	// Kick off the control loop by sending the first actor, if there is one.
-	if let Some((&id, &character)) = level.characters_by_id().next() {
-		next_actors.send(NextActor { id, character });
-	}
 
 	// Add static camera overlooking the level.
 	let center_x = (level.width() as f32 - 1.0) / 2.0;
 	let center_z = (level.height() as f32 - 1.0) / 2.0;
 	let diameter = level.width().max(level.height()) as f32;
-	commands.spawn(Camera3dBundle {
-		transform: Transform::from_xyz(
-			center_x,
-			diameter,
-			level.height() as f32,
-		)
-		.looking_at(Vec3::new(center_x, 0.0, center_z), Vec3::Y),
-		..default()
-	});
-	// Add lighting.
-	commands.spawn(PointLightBundle {
-		point_light: PointLight {
-			intensity: 2500.0,
-			shadows_enabled: true,
+	commands.spawn((
+		LevelEntity,
+		Camera3dBundle {
+			transform: Transform::from_xyz(
+				center_x,
+				diameter,
+				level.height() as f32,
+			)
+			.looking_at(Vec3::new(center_x, 1.0, center_z), Vec3::Y),
 			..default()
 		},
-		transform: Transform::from_xyz(0.0, 10.0, 0.0),
-		..default()
-	});
+	));
 
-	// Insert level resource.
-	commands.insert_resource(level);
+	// Add lighting.
+	commands.spawn((
+		LevelEntity,
+		PointLightBundle {
+			point_light: PointLight {
+				intensity: 2500.0,
+				shadows_enabled: true,
+				..default()
+			},
+			transform: Transform::from_xyz(0.0, 10.0, 0.0),
+			..default()
+		},
+	));
+
+	// Kick off the control loop by sending the first actor, if there is one.
+	if let Some((&id, &character)) = level.characters_by_id().next() {
+		next_actors.send(NextActor { id, character });
+	}
 
 	next_state.set(GameState::Playing);
+}
+
+fn change_level(
+	mut commands: Commands,
+	mut keyboard_events: EventReader<KeyboardInput>,
+	mut level: ResMut<Level>,
+	mut next_state: ResMut<NextState<GameState>>,
+	level_entities: Query<Entity, With<level::LevelEntity>>,
+) {
+	for event in keyboard_events.iter() {
+		if event.state != ButtonState::Pressed {
+			continue;
+		}
+		if let Some(next_level) = match event.key_code {
+			Some(KeyCode::Key1) => Some(level::test_level()),
+			Some(KeyCode::Key2) => Some(level::test_level_short()),
+			Some(KeyCode::Key3) => Some(level::test_level_thin()),
+			_ => None,
+		} {
+			// Despawn any existing level entities.
+			for entity in level_entities.into_iter() {
+				commands.entity(entity).despawn_recursive();
+			}
+			// Update the level resource and respawn the level.
+			*level = next_level;
+			next_state.set(GameState::SpawningLevel);
+		}
+	}
 }

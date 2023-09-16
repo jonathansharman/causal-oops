@@ -81,6 +81,6 @@ pub fn load_gltf_meshes(
 		}
 	}
 	if models.unloaded.is_empty() {
-		next_state.set(GameState::CreatingLevel);
+		next_state.set(GameState::SpawningLevel);
 	}
 }

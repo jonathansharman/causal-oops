@@ -14,6 +14,12 @@ use bevy::{
 
 use crate::control::Action;
 
+/// Marker component for entities that should be despawned when the level is
+/// despawned. Note that level entities are despawned recursively, so it's best
+/// to only add this component to root entities.
+#[derive(Component)]
+pub struct LevelEntity;
+
 /// Row-column coordinates on a [`Level`] grid.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Coords {
@@ -1085,6 +1091,30 @@ pub fn test_level() -> Level {
 		   # . .X. . . . . # 
 		   # . . . . . . . # 
 		   # # # # # # # # # "#,
+	)
+}
+
+/// Makes a fresh copy of a flat test level.
+pub fn test_level_short() -> Level {
+	make_level(
+		r#"# # # # # # # # # 
+		   # . .0. . . . . # 
+		   # # # # # # # # # "#,
+	)
+}
+
+/// Makes a fresh copy of a thin test level.
+pub fn test_level_thin() -> Level {
+	make_level(
+		r#"# # # 
+		   # .0# 
+		   # . # 
+		   # . # 
+		   # .X# 
+		   # .X# 
+		   # . # 
+		   # . # 
+		   # # # "#,
 	)
 }
 
