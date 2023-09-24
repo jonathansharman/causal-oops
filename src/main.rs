@@ -3,6 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::{
 	input::{keyboard::KeyboardInput, ButtonState},
 	prelude::*,
+	render::camera::ScalingMode,
 };
 use bevy_easings::EasingsPlugin;
 
@@ -210,18 +211,26 @@ fn spawn_level(
 	}
 
 	// Add static camera overlooking the level.
-	let center_x = (level.width() as f32 - 1.0) / 2.0;
-	let center_z = (level.height() as f32 - 1.0) / 2.0;
-	let diameter = level.width().max(level.height()) as f32;
+	let back_left = Vec3::new(-0.5, 1.0, -0.5);
+	let level_size =
+		Vec3::new(level.width() as f32, 0.0, level.height() as f32);
+	let center = back_left + 0.5 * level_size;
 	commands.spawn((
 		LevelEntity,
 		Camera3dBundle {
-			transform: Transform::from_xyz(
-				center_x,
-				diameter,
-				level.height() as f32,
-			)
-			.looking_at(Vec3::new(center_x, 1.0, center_z), Vec3::Y),
+			transform: Transform::from_translation(Vec3::new(
+				center.x,
+				level_size.x.max(level_size.z),
+				back_left.z + level_size.z,
+			))
+			.looking_at(center, Vec3::Y),
+			projection: Projection::Orthographic(OrthographicProjection {
+				scaling_mode: ScalingMode::AutoMin {
+					min_width: level_size.x,
+					min_height: level_size.z,
+				},
+				..default()
+			}),
 			..default()
 		},
 	));
@@ -263,6 +272,7 @@ fn change_level(
 			Some(KeyCode::Key1) => Some(level::test_level()),
 			Some(KeyCode::Key2) => Some(level::test_level_short()),
 			Some(KeyCode::Key3) => Some(level::test_level_thin()),
+			Some(KeyCode::Key4) => Some(level::test_level_large()),
 			_ => None,
 		} {
 			// Despawn any existing level entities.

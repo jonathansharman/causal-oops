@@ -1118,6 +1118,31 @@ pub fn test_level_thin() -> Level {
 	)
 }
 
+/// Makes a fresh copy of a large test level.
+pub fn test_level_large() -> Level {
+	make_level(
+		r#"# # # # # # # # # # # # # # # # # # # # # # 
+		   # . .0. . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . .X.Y.Z. . . . . . . . . . . . . . . . # 
+		   # . .X.Y. . . . . . . . . . . . . . . . . # 
+		   # . .X. . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # . . . . . . . . . . . . . . . . . . . . # 
+		   # # # # # # # # # # # # # # # # # # # # # # "#,
+	)
+}
+
 /// Makes a test level from a string. Each line is a level row, alternating
 /// between tiles and objects. Leading whitespace and blank lines are ignored.
 fn make_level(map: &str) -> Level {
