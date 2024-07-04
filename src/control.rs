@@ -37,9 +37,8 @@ impl KeyboardBindings {
 		's: 'k,
 	{
 		iter.into_iter().filter_map(|input| {
-			input
-				.key_code
-				.and_then(|key_code| self.0.get(&key_code))
+			self.0
+				.get(&input.key_code)
 				.map(|button| (*button, input.state))
 		})
 	}
@@ -48,16 +47,16 @@ impl KeyboardBindings {
 impl Default for KeyboardBindings {
 	fn default() -> KeyboardBindings {
 		KeyboardBindings(HashMap::from([
-			(KeyCode::Z, GameButton::Undo),
-			(KeyCode::X, GameButton::Redo),
-			(KeyCode::W, GameButton::Up),
-			(KeyCode::Up, GameButton::Up),
-			(KeyCode::A, GameButton::Left),
-			(KeyCode::Left, GameButton::Left),
-			(KeyCode::S, GameButton::Down),
-			(KeyCode::Down, GameButton::Down),
-			(KeyCode::D, GameButton::Right),
-			(KeyCode::Right, GameButton::Right),
+			(KeyCode::KeyZ, GameButton::Undo),
+			(KeyCode::KeyX, GameButton::Redo),
+			(KeyCode::KeyW, GameButton::Up),
+			(KeyCode::ArrowUp, GameButton::Up),
+			(KeyCode::KeyA, GameButton::Left),
+			(KeyCode::ArrowLeft, GameButton::Left),
+			(KeyCode::KeyS, GameButton::Down),
+			(KeyCode::ArrowDown, GameButton::Down),
+			(KeyCode::KeyD, GameButton::Right),
+			(KeyCode::ArrowRight, GameButton::Right),
 			(KeyCode::Space, GameButton::Wait),
 			(KeyCode::ShiftLeft, GameButton::Act),
 		]))
@@ -103,11 +102,11 @@ pub fn control(
 	// control event.
 	state
 		.input_buffer
-		.extend(keybinds.adapt(&mut keyboard_events));
+		.extend(keybinds.adapt(&mut keyboard_events.read()));
 
 	// Set the next actor if there is one. There should be at most one next
 	// actor per frame.
-	if let Some(next_actor) = next_actors.iter().last() {
+	if let Some(next_actor) = next_actors.read().last() {
 		state.next_actor = Some(*next_actor);
 	}
 	// Get the next actor or return if there's no actor to control.

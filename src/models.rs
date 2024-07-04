@@ -66,14 +66,17 @@ impl Models {
 pub fn load_gltf_meshes(
 	mut asset_events: EventReader<AssetEvent<Gltf>>,
 	mut models: ResMut<Models>,
-	gltf_assets: Res<Assets<Gltf>>,
+	mut gltf_assets: ResMut<Assets<Gltf>>,
 	gltf_mesh_assets: Res<Assets<GltfMesh>>,
 	mut next_state: ResMut<NextState<GameState>>,
 ) {
-	for asset_event in asset_events.iter() {
-		if let AssetEvent::Created { handle } = asset_event {
-			if let Some(get_mesh_mut) = models.unloaded.remove(handle) {
-				let gltf = gltf_assets.get(handle).unwrap();
+	for asset_event in asset_events.read() {
+		if let AssetEvent::Added { id } = asset_event {
+			let Some(handle) = gltf_assets.get_strong_handle(*id) else {
+				continue;
+			};
+			if let Some(get_mesh_mut) = models.unloaded.remove(&handle) {
+				let gltf = gltf_assets.get(*id).unwrap();
 				let gltf_mesh = gltf_mesh_assets.get(&gltf.meshes[0]).unwrap();
 				let mesh = gltf_mesh.primitives[0].mesh.clone();
 				*get_mesh_mut(&mut models) = mesh;

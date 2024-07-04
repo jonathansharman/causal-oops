@@ -27,7 +27,7 @@ pub fn update(
 	mut next_actors: EventWriter<NextActor>,
 	mut change_events: EventWriter<ChangeEvent>,
 ) {
-	for control_event in control_events.iter() {
+	for control_event in control_events.read() {
 		match control_event {
 			ControlEvent::Act(character_action) => {
 				state.queue.push(*character_action);

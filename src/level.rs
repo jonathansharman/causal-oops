@@ -162,14 +162,14 @@ impl CharacterColor {
 
 	pub fn color(&self) -> Color {
 		match self {
-			CharacterColor::Green => Color::rgb(0.2, 0.7, 0.2),
-			CharacterColor::Red => Color::rgb(0.7, 0.2, 0.2),
-			CharacterColor::Blue => Color::rgb(0.2, 0.2, 0.7),
-			CharacterColor::Yellow => Color::rgb(0.7, 0.7, 0.2),
-			CharacterColor::Magenta => Color::rgb(0.7, 0.2, 0.7),
-			CharacterColor::Cyan => Color::rgb(0.2, 0.7, 0.7),
-			CharacterColor::Black => Color::rgb(0.2, 0.2, 0.2),
-			CharacterColor::White => Color::rgb(0.7, 0.7, 0.7),
+			CharacterColor::Green => Color::srgb(0.2, 0.7, 0.2),
+			CharacterColor::Red => Color::srgb(0.7, 0.2, 0.2),
+			CharacterColor::Blue => Color::srgb(0.2, 0.2, 0.7),
+			CharacterColor::Yellow => Color::srgb(0.7, 0.7, 0.2),
+			CharacterColor::Magenta => Color::srgb(0.7, 0.2, 0.7),
+			CharacterColor::Cyan => Color::srgb(0.2, 0.7, 0.7),
+			CharacterColor::Black => Color::srgb(0.2, 0.2, 0.2),
+			CharacterColor::White => Color::srgb(0.7, 0.7, 0.7),
 		}
 	}
 }

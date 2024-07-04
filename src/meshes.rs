@@ -11,23 +11,14 @@ pub struct Meshes {
 impl Meshes {
 	pub fn load(mesh_assets: &mut Assets<Mesh>) -> Self {
 		Self {
-			character: mesh_assets.add(
-				Mesh::try_from(shape::Cylinder {
-					radius: 0.5,
-					height: 1.0,
-					resolution: 3,
-					..default()
-				})
-				.unwrap(),
-			),
-			portal: mesh_assets.add(
-				Mesh::try_from(shape::Cylinder {
-					radius: 0.5,
-					height: PORTAL_HEIGHT,
-					..default()
-				})
-				.unwrap(),
-			),
+			character: mesh_assets.add(Mesh::from(Cylinder {
+				radius: 0.5,
+				half_height: 0.5,
+			})),
+			portal: mesh_assets.add(Mesh::from(Cylinder {
+				radius: 0.5,
+				half_height: 0.5 * PORTAL_HEIGHT,
+			})),
 		}
 	}
 }

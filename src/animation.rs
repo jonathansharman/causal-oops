@@ -52,7 +52,7 @@ pub fn add_indicators(
 	choosing_query: Query<Entity, With<ChoosingIndicator>>,
 ) {
 	// Next actor
-	for NextActor { id: actor_id, .. } in next_actors.iter() {
+	for NextActor { id: actor_id, .. } in next_actors.read() {
 		// Clear any existing choosing indicators.
 		for entity in &choosing_query {
 			commands.entity(entity).despawn_recursive();
@@ -83,7 +83,7 @@ pub fn add_indicators(
 	}
 
 	// Pending actions
-	for control_event in control_events.iter() {
+	for control_event in control_events.read() {
 		let ControlEvent::Act((actor_id, action)) = control_event else {
 			continue;
 		};
@@ -144,7 +144,7 @@ pub fn animate_returnings(
 	object_query: Query<(Entity, &Object)>,
 	portal_query: Query<(Entity, &Portal)>,
 ) {
-	for change in change_events.iter() {
+	for change in change_events.read() {
 		for returning in change.returnings.values() {
 			let returner_transform = Transform::from_xyz(
 				returning.returner.coords.col as f32,
@@ -198,7 +198,7 @@ pub fn animate_moves(
 	object_query: Query<(Entity, &Children, &Transform, &Object)>,
 	body_query: Query<(Entity, &Transform), With<ObjectBody>>,
 ) {
-	for change in change_events.iter() {
+	for change in change_events.read() {
 		for (parent, children, from, object) in &object_query {
 			let Some(mv) = change.moves.get(&object.id) else {
 				continue;
@@ -237,7 +237,7 @@ pub fn animate_summonings(
 	meshes: Res<Meshes>,
 	materials: Res<Materials>,
 ) {
-	for change in change_events.iter() {
+	for change in change_events.read() {
 		for summoning in change.summonings.values() {
 			let summon_transform = Transform::from_xyz(
 				summoning.summon.coords.col as f32,

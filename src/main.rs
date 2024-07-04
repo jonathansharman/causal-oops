@@ -26,7 +26,17 @@ mod update;
 
 fn main() {
 	App::new()
-		.add_state::<GameState>()
+		.add_plugins((
+			DefaultPlugins.set(WindowPlugin {
+				primary_window: Some(Window {
+					title: "Causal Oops".to_string(),
+					..default()
+				}),
+				..default()
+			}),
+			EasingsPlugin,
+		))
+		.init_state::<GameState>()
 		.add_systems(Startup, setup)
 		.add_systems(
 			Update,
@@ -59,16 +69,6 @@ fn main() {
 		.add_event::<ChangeEvent>()
 		.insert_resource(ClearColor(Color::BLACK))
 		.insert_resource(level::test_level())
-		.add_plugins((
-			DefaultPlugins.set(WindowPlugin {
-				primary_window: Some(Window {
-					title: "Causal Oops".to_string(),
-					..default()
-				}),
-				..default()
-			}),
-			EasingsPlugin,
-		))
 		.run();
 }
 
@@ -240,7 +240,7 @@ fn spawn_level(
 		LevelEntity,
 		PointLightBundle {
 			point_light: PointLight {
-				intensity: 2500.0,
+				intensity: 2_500_000.0,
 				shadows_enabled: true,
 				..default()
 			},
@@ -264,15 +264,15 @@ fn change_level(
 	mut next_state: ResMut<NextState<GameState>>,
 	level_entities: Query<Entity, With<level::LevelEntity>>,
 ) {
-	for event in keyboard_events.iter() {
+	for event in keyboard_events.read() {
 		if event.state != ButtonState::Pressed {
 			continue;
 		}
 		if let Some(next_level) = match event.key_code {
-			Some(KeyCode::Key1) => Some(level::test_level()),
-			Some(KeyCode::Key2) => Some(level::test_level_short()),
-			Some(KeyCode::Key3) => Some(level::test_level_thin()),
-			Some(KeyCode::Key4) => Some(level::test_level_large()),
+			KeyCode::Digit1 => Some(level::test_level()),
+			KeyCode::Digit2 => Some(level::test_level_short()),
+			KeyCode::Digit3 => Some(level::test_level_thin()),
+			KeyCode::Digit4 => Some(level::test_level_large()),
 			_ => None,
 		} {
 			// Despawn any existing level entities.

@@ -12,10 +12,9 @@ impl Materials {
 	pub fn load(material_assets: &mut Assets<StandardMaterial>) -> Self {
 		Self {
 			characters: std::array::from_fn(|idx| {
-				material_assets
-					.add(CharacterColor::from(idx as u8).color().into())
+				material_assets.add(CharacterColor::from(idx as u8).color())
 			}),
-			indicator: material_assets.add(Color::WHITE.into()),
+			indicator: material_assets.add(Color::WHITE),
 		}
 	}
 }
