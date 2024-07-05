@@ -45,12 +45,16 @@ impl Models {
 		unloaded.insert(asset_server.load("models/return.glb"), |models| {
 			&mut models.return_mesh
 		});
+		let scene0 = GltfAssetLabel::Scene(0);
 		Self {
-			wall: asset_server.load("models/wall.glb#Scene0"),
-			floor: asset_server.load("models/stone.glb#Scene0"),
-			wooden_crate: asset_server.load("models/wooden-crate.glb#Scene0"),
-			steel_crate: asset_server.load("models/steel-crate.glb#Scene0"),
-			stone_block: asset_server.load("models/sandstone-block.glb#Scene0"),
+			wall: asset_server.load(scene0.from_asset("models/wall.glb")),
+			floor: asset_server.load(scene0.from_asset("models/stone.glb")),
+			wooden_crate: asset_server
+				.load(scene0.from_asset("models/wooden-crate.glb")),
+			steel_crate: asset_server
+				.load(scene0.from_asset("models/steel-crate.glb")),
+			stone_block: asset_server
+				.load(scene0.from_asset("models/sandstone-block.glb")),
 			// Initialize meshes with default handles, which the
 			// load_gltf_meshes system will replace once Gltf assets load.
 			question_mesh: Handle::default(),
