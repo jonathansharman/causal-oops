@@ -11,14 +11,18 @@ pub struct Meshes {
 impl Meshes {
 	pub fn load(mesh_assets: &mut Assets<Mesh>) -> Self {
 		Self {
-			character: mesh_assets.add(Mesh::from(Cylinder {
-				radius: 0.5,
-				half_height: 0.5,
-			})),
-			portal: mesh_assets.add(Mesh::from(Cylinder {
-				radius: 0.5,
-				half_height: 0.5 * PORTAL_HEIGHT,
-			})),
+			character: mesh_assets.add(Mesh::from(Extrusion::new(
+				Triangle2d::new(
+					Vec2::new(-0.5, -0.5),
+					0.5 * Vec2::X,
+					Vec2::new(-0.5, 0.5),
+				),
+				1.0,
+			))),
+			portal: mesh_assets.add(Mesh::from(Extrusion::new(
+				Circle { radius: 0.5 },
+				PORTAL_HEIGHT,
+			))),
 		}
 	}
 }

@@ -51,6 +51,8 @@ pub fn add_indicators(
 	object_query: Query<(Entity, &Object, &Transform)>,
 	choosing_query: Query<Entity, With<ChoosingIndicator>>,
 ) {
+	let transform = Transform::from_translation(0.5 * Vec3::Z);
+
 	// Next actor
 	for NextActor { id: actor_id, .. } in next_actors.read() {
 		// Clear any existing choosing indicators.
@@ -58,7 +60,6 @@ pub fn add_indicators(
 			commands.entity(entity).despawn_recursive();
 		}
 		// Spawn a new choosing indicator.
-		let transform = Transform::from_translation(0.5 * Vec3::Y);
 		let indicator = commands
 			.spawn((
 				PbrBundle {
@@ -88,12 +89,11 @@ pub fn add_indicators(
 			continue;
 		};
 		// Get the mesh and transform for the pending action indicator.
-		let transform = Transform::from_translation(0.5 * Vec3::Y);
 		let (mesh, transform) = match action {
 			Action::Wait => (models.wait_mesh.clone(), transform),
 			Action::Push(offset) => (
 				models.arrow_mesh.clone(),
-				transform.with_rotation(Quat::from_rotation_y(offset.angle())),
+				transform.with_rotation(Quat::from_rotation_z(offset.angle())),
 			),
 			Action::Summon(_offset) => (models.summon_mesh.clone(), transform),
 			Action::Return => (models.return_mesh.clone(), transform),
@@ -146,16 +146,11 @@ pub fn animate_returnings(
 ) {
 	for change in change_events.read() {
 		for returning in change.returnings.values() {
-			let returner_transform = Transform::from_xyz(
-				returning.returner.coords.col as f32,
-				0.5,
-				returning.returner.coords.row as f32,
-			);
-			let portal_transform = Transform::from_xyz(
-				returning.returner.coords.col as f32,
-				0.5 * crate::meshes::PORTAL_HEIGHT,
-				returning.returner.coords.row as f32,
-			);
+			let returner_transform = returning.returner.coords.transform(0.5);
+			let portal_transform = returning
+				.returner
+				.coords
+				.transform(0.5 * crate::meshes::PORTAL_HEIGHT);
 			// Despawn returning character.
 			for (entity, object) in &object_query {
 				if object.id == returning.returner.id {
@@ -204,7 +199,7 @@ pub fn animate_moves(
 				continue;
 			};
 			commands.entity(parent).insert(from.ease_to(
-				Transform::from(mv.to_coords),
+				mv.to_coords.transform(0.5),
 				EaseFunction::CubicInOut,
 				EasingType::Once {
 					duration: ANIMATION_DURATION,
@@ -216,7 +211,7 @@ pub fn animate_moves(
 				for child in children {
 					if let Ok((body, from)) = body_query.get(*child) {
 						commands.entity(body).insert(from.ease_to(
-							Transform::from_rotation(Quat::from_rotation_y(
+							Transform::from_rotation(Quat::from_rotation_z(
 								mv.to_angle,
 							)),
 							EaseFunction::CubicInOut,
@@ -239,16 +234,11 @@ pub fn animate_summonings(
 ) {
 	for change in change_events.read() {
 		for summoning in change.summonings.values() {
-			let summon_transform = Transform::from_xyz(
-				summoning.summon.coords.col as f32,
-				0.5,
-				summoning.summon.coords.row as f32,
-			);
-			let portal_transform = Transform::from_xyz(
-				summoning.summon.coords.col as f32,
-				0.5 * crate::meshes::PORTAL_HEIGHT,
-				summoning.summon.coords.row as f32,
-			);
+			let summon_transform = summoning.summon.coords.transform(0.5);
+			let portal_transform = summoning
+				.summon
+				.coords
+				.transform(0.5 * crate::meshes::PORTAL_HEIGHT);
 			// Spawn summoned character.
 			commands
 				.spawn((

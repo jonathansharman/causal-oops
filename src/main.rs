@@ -1,4 +1,4 @@
-use std::f32::consts::FRAC_PI_2;
+use std::f32::consts::TAU;
 
 use bevy::{
 	input::{keyboard::KeyboardInput, ButtonState},
@@ -90,21 +90,21 @@ fn spawn_level(
 	models: Res<Models>,
 	meshes: Res<Meshes>,
 	materials: Res<Materials>,
+	mut ambient_light: ResMut<AmbientLight>,
 	mut next_actors: EventWriter<NextActor>,
 	mut next_state: ResMut<NextState<GameState>>,
 ) {
 	// Spawn tile entities.
 	for row in 0..level.height() {
 		for col in 0..level.width() {
-			match level.tile_at(Coords::new(row as i32, col as i32)) {
+			let tile_coords = Coords::new(row as i32, col as i32);
+			match level.tile_at(tile_coords) {
 				// Assume a fresh level has no open portals.
 				Tile::Floor { .. } => commands.spawn((
 					LevelEntity,
 					SceneBundle {
 						scene: models.floor.clone(),
-						transform: Transform::from_xyz(
-							col as f32, -0.5, row as f32,
-						),
+						transform: tile_coords.transform(-0.5),
 						..default()
 					},
 				)),
@@ -112,9 +112,7 @@ fn spawn_level(
 					LevelEntity,
 					SceneBundle {
 						scene: models.wall.clone(),
-						transform: Transform::from_xyz(
-							col as f32, 0.5, row as f32,
-						),
+						transform: tile_coords.transform(0.5),
 						..default()
 					},
 				)),
@@ -124,9 +122,8 @@ fn spawn_level(
 
 	// Spawn object entities.
 	for level_object in level.iter_level_objects() {
-		let Coords { row, col } = level_object.coords;
 		let spatial_bundle = SpatialBundle {
-			transform: Transform::from_xyz(col as f32, 0.5, row as f32),
+			transform: level_object.coords.transform(0.5),
 			..default()
 		};
 		match level_object.object {
@@ -146,9 +143,6 @@ fn spawn_level(
 							mesh: meshes.character.clone(),
 							material: materials.characters[c.color.idx()]
 								.clone(),
-							transform: Transform::from_rotation(
-								Quat::from_rotation_y(-FRAC_PI_2),
-							),
 							..default()
 						},
 					));
@@ -211,23 +205,23 @@ fn spawn_level(
 	}
 
 	// Add static camera overlooking the level.
-	let back_left = Vec3::new(-0.5, 1.0, -0.5);
+	let offset = Vec3::new(-0.5, 0.5, 1.0);
 	let level_size =
-		Vec3::new(level.width() as f32, 0.0, level.height() as f32);
-	let center = back_left + 0.5 * level_size;
+		Vec3::new(level.width() as f32, level.height() as f32, 0.0);
+	let target = offset + 0.5 * Vec3::new(level_size.x, -level_size.y, 0.0);
 	commands.spawn((
 		LevelEntity,
 		Camera3dBundle {
 			transform: Transform::from_translation(Vec3::new(
-				center.x,
-				level_size.x.max(level_size.z),
-				back_left.z + level_size.z,
+				target.x,
+				-level_size.y,
+				level_size.x.max(level_size.y),
 			))
-			.looking_at(center, Vec3::Y),
+			.looking_at(target, Vec3::Z),
 			projection: Projection::Orthographic(OrthographicProjection {
 				scaling_mode: ScalingMode::AutoMin {
 					min_width: level_size.x,
-					min_height: level_size.z,
+					min_height: level_size.y,
 				},
 				..default()
 			}),
@@ -236,15 +230,19 @@ fn spawn_level(
 	));
 
 	// Add lighting.
+	ambient_light.brightness = 250.0;
 	commands.spawn((
 		LevelEntity,
-		PointLightBundle {
-			point_light: PointLight {
-				intensity: 2_500_000.0,
+		DirectionalLightBundle {
+			directional_light: DirectionalLight {
+				illuminance: 0.3 * light_consts::lux::AMBIENT_DAYLIGHT,
 				shadows_enabled: true,
 				..default()
 			},
-			transform: Transform::from_xyz(0.0, 10.0, 0.0),
+			transform: Transform::from_rotation(Quat::from_axis_angle(
+				Vec3::new(1.0, 1.0, 0.0),
+				-TAU / 16.0,
+			)),
 			..default()
 		},
 	));

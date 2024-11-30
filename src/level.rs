@@ -1,7 +1,6 @@
 use std::{
 	cmp::Ordering,
 	collections::BTreeSet,
-	f32::consts::FRAC_PI_2,
 	fmt::{Debug, Write},
 	ops::{Add, AddAssign, Mul, Neg},
 	sync::Arc,
@@ -33,9 +32,13 @@ impl Coords {
 	}
 }
 
-impl From<Coords> for Transform {
-	fn from(value: Coords) -> Self {
-		Transform::from_xyz(value.col as f32, 0.5, value.row as f32)
+impl Coords {
+	pub fn transform(&self, z: f32) -> Transform {
+		Transform::from_translation(Vec3::new(
+			self.col as f32,
+			-self.row as f32,
+			z,
+		))
 	}
 }
 
@@ -56,9 +59,9 @@ impl Offset {
 		Offset { row, col }
 	}
 
-	/// The angle formed by `self`.
+	/// The angle formed by `self` relative to [`Offset::RIGHT`].
 	pub fn angle(&self) -> f32 {
-		f32::atan2(-self.row as f32, self.col as f32)
+		(-self.row as f32).atan2(self.col as f32)
 	}
 }
 
@@ -697,7 +700,7 @@ impl Level {
 										portal_coords: None,
 									},
 									coords,
-									angle: -FRAC_PI_2,
+									angle: 0.0,
 								},
 								linked_id: summoner_id,
 								portal_color: level_summoner.character.color,
@@ -1209,7 +1212,7 @@ fn make_level(map: &str) -> Level {
 			id,
 			object,
 			coords,
-			angle: -FRAC_PI_2,
+			angle: 0.0,
 		});
 	}
 	level
