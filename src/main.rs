@@ -42,7 +42,9 @@ fn main() {
 			Update,
 			(
 				load_gltf_meshes.run_if(in_state(GameState::Loading)),
-				spawn_level.run_if(in_state(GameState::SpawningLevel)),
+				(spawn_level, lights_cameras_action)
+					.chain()
+					.run_if(in_state(GameState::SpawningLevel)),
 				(
 					control::control,
 					update::update,
@@ -90,9 +92,6 @@ fn spawn_level(
 	models: Res<Models>,
 	meshes: Res<Meshes>,
 	materials: Res<Materials>,
-	mut ambient_light: ResMut<AmbientLight>,
-	mut next_actors: EventWriter<NextActor>,
-	mut next_state: ResMut<NextState<GameState>>,
 ) {
 	// Spawn tile entities.
 	for row in 0..level.height() {
@@ -183,8 +182,16 @@ fn spawn_level(
 				}),
 		};
 	}
+}
 
-	// Add static camera overlooking the level.
+fn lights_cameras_action(
+	mut commands: Commands,
+	level: Res<Level>,
+	mut ambient_light: ResMut<AmbientLight>,
+	mut next_actors: EventWriter<NextActor>,
+	mut next_state: ResMut<NextState<GameState>>,
+) {
+	// Add a static camera overlooking the level.
 	let offset = Vec3::new(-0.5, 0.5, 1.0);
 	let level_size =
 		Vec3::new(level.width() as f32, level.height() as f32, 0.0);
