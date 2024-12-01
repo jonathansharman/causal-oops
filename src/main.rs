@@ -34,7 +34,7 @@ fn main() {
 				}),
 				..default()
 			}),
-			EasingsPlugin,
+			EasingsPlugin::default(),
 		))
 		.init_state::<GameState>()
 		.add_systems(Startup, setup)
@@ -102,19 +102,13 @@ fn spawn_level(
 				// Assume a fresh level has no open portals.
 				Tile::Floor { .. } => commands.spawn((
 					LevelEntity,
-					SceneBundle {
-						scene: models.floor.clone(),
-						transform: tile_coords.transform(-0.5),
-						..default()
-					},
+					SceneRoot(models.floor.clone()),
+					tile_coords.transform(-0.5),
 				)),
 				Tile::Wall => commands.spawn((
 					LevelEntity,
-					SceneBundle {
-						scene: models.wall.clone(),
-						transform: tile_coords.transform(0.5),
-						..default()
-					},
+					SceneRoot(models.wall.clone()),
+					tile_coords.transform(0.5),
 				)),
 			};
 		}
@@ -122,10 +116,7 @@ fn spawn_level(
 
 	// Spawn object entities.
 	for level_object in level.iter_level_objects() {
-		let spatial_bundle = SpatialBundle {
-			transform: level_object.coords.transform(0.5),
-			..default()
-		};
+		let transform = level_object.coords.transform(0.5);
 		match level_object.object {
 			Object::Character(c) => commands
 				.spawn((
@@ -134,17 +125,15 @@ fn spawn_level(
 						id: level_object.id,
 						rotates: true,
 					},
-					spatial_bundle,
+					transform,
 				))
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						PbrBundle {
-							mesh: meshes.character.clone(),
-							material: materials.characters[c.color.idx()]
-								.clone(),
-							..default()
-						},
+						Mesh3d(meshes.character.clone()),
+						MeshMaterial3d(
+							materials.characters[c.color.idx()].clone(),
+						),
 					));
 				}),
 			Object::WoodenCrate => commands
@@ -154,15 +143,12 @@ fn spawn_level(
 						id: level_object.id,
 						rotates: false,
 					},
-					spatial_bundle,
+					transform,
 				))
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						SceneBundle {
-							scene: models.wooden_crate.clone(),
-							..default()
-						},
+						SceneRoot(models.wooden_crate.clone()),
 					));
 				}),
 			Object::SteelCrate => commands
@@ -172,15 +158,12 @@ fn spawn_level(
 						id: level_object.id,
 						rotates: false,
 					},
-					spatial_bundle,
+					transform,
 				))
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						SceneBundle {
-							scene: models.steel_crate.clone(),
-							..default()
-						},
+						SceneRoot(models.steel_crate.clone()),
 					));
 				}),
 			Object::StoneBlock => commands
@@ -190,15 +173,12 @@ fn spawn_level(
 						id: level_object.id,
 						rotates: false,
 					},
-					spatial_bundle,
+					transform,
 				))
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						SceneBundle {
-							scene: models.stone_block.clone(),
-							..default()
-						},
+						SceneRoot(models.stone_block.clone()),
 					));
 				}),
 		};
@@ -211,40 +191,35 @@ fn spawn_level(
 	let target = offset + 0.5 * Vec3::new(level_size.x, -level_size.y, 0.0);
 	commands.spawn((
 		LevelEntity,
-		Camera3dBundle {
-			transform: Transform::from_translation(Vec3::new(
-				target.x,
-				-level_size.y,
-				level_size.x.max(level_size.y),
-			))
-			.looking_at(target, Vec3::Z),
-			projection: Projection::Orthographic(OrthographicProjection {
-				scaling_mode: ScalingMode::AutoMin {
-					min_width: level_size.x,
-					min_height: level_size.y,
-				},
-				..default()
-			}),
-			..default()
-		},
+		Camera3d::default(),
+		Transform::from_translation(Vec3::new(
+			target.x,
+			-level_size.y,
+			level_size.x.max(level_size.y),
+		))
+		.looking_at(target, Vec3::Z),
+		Projection::Orthographic(OrthographicProjection {
+			scaling_mode: ScalingMode::AutoMin {
+				min_width: level_size.x,
+				min_height: level_size.y,
+			},
+			..OrthographicProjection::default_3d()
+		}),
 	));
 
 	// Add lighting.
 	ambient_light.brightness = 250.0;
 	commands.spawn((
 		LevelEntity,
-		DirectionalLightBundle {
-			directional_light: DirectionalLight {
-				illuminance: 0.3 * light_consts::lux::AMBIENT_DAYLIGHT,
-				shadows_enabled: true,
-				..default()
-			},
-			transform: Transform::from_rotation(Quat::from_axis_angle(
-				Vec3::new(1.0, 1.0, 0.0),
-				-TAU / 16.0,
-			)),
+		DirectionalLight {
+			illuminance: 0.3 * light_consts::lux::AMBIENT_DAYLIGHT,
+			shadows_enabled: true,
 			..default()
 		},
+		Transform::from_rotation(Quat::from_axis_angle(
+			Vec3::new(1.0, 1.0, 0.0),
+			-TAU / 16.0,
+		)),
 	));
 
 	// Kick off the control loop by sending the first actor, if there is one.

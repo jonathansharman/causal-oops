@@ -17,6 +17,7 @@ use crate::{
 
 /// Component for animating an object in a level.
 #[derive(Component)]
+#[require(Transform, Visibility)]
 pub struct Object {
 	pub id: Id,
 	pub rotates: bool,
@@ -24,6 +25,7 @@ pub struct Object {
 
 /// Component for animating a portal in a level.
 #[derive(Component)]
+#[require(Transform, Visibility)]
 pub struct Portal {
 	pub coords: Coords,
 }
@@ -33,12 +35,14 @@ pub struct Portal {
 /// independently from the rotation of UI elements (such as turn indicators)
 /// associated with that `Object`.
 #[derive(Component)]
+#[require(Transform, Visibility)]
 pub struct ObjectBody;
 
 #[derive(Component)]
 pub struct ChoosingIndicator;
 
 #[derive(Component)]
+#[require(Transform, Visibility)]
 pub struct ChoiceIndicator;
 
 /// Add indicators for pending actions and next actor.
@@ -62,12 +66,9 @@ pub fn add_indicators(
 		// Spawn a new choosing indicator.
 		let indicator = commands
 			.spawn((
-				PbrBundle {
-					mesh: models.question_mesh.clone(),
-					material: materials.indicator.clone(),
-					transform,
-					..default()
-				},
+				Mesh3d(models.question_mesh.clone()),
+				MeshMaterial3d(materials.indicator.clone()),
+				transform,
 				NotShadowCaster,
 				NotShadowReceiver,
 				ChoosingIndicator,
@@ -101,12 +102,9 @@ pub fn add_indicators(
 		// Spawn the indicator.
 		let indicator = commands
 			.spawn((
-				PbrBundle {
-					mesh,
-					material: materials.indicator.clone(),
-					transform,
-					..default()
-				},
+				Mesh3d(mesh),
+				MeshMaterial3d(materials.indicator.clone()),
+				transform,
 				NotShadowCaster,
 				NotShadowReceiver,
 				ChoiceIndicator,
@@ -247,7 +245,6 @@ pub fn animate_summonings(
 						id: summoning.summon.id,
 						rotates: true,
 					},
-					SpatialBundle { ..default() },
 					summon_transform.with_scale(Vec3::ZERO).ease_to(
 						summon_transform.with_scale(Vec3::ONE),
 						EaseFunction::CubicIn,
@@ -259,16 +256,15 @@ pub fn animate_summonings(
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						ObjectBody,
-						PbrBundle {
-							mesh: meshes.character.clone(),
-							material: materials.characters
+						Mesh3d(meshes.character.clone()),
+						MeshMaterial3d(
+							materials.characters
 								[summoning.summon.character.color.idx()]
 							.clone(),
-							transform: Transform::from_rotation(
-								Quat::from_rotation_y(summoning.summon.angle),
-							),
-							..default()
-						},
+						),
+						Transform::from_rotation(Quat::from_rotation_y(
+							summoning.summon.angle,
+						)),
 					));
 				});
 			// Spawn opened portal.
@@ -279,13 +275,10 @@ pub fn animate_summonings(
 				},
 				NotShadowCaster,
 				NotShadowReceiver,
-				PbrBundle {
-					mesh: meshes.portal.clone(),
-					material: materials.characters
-						[summoning.portal_color.idx()]
-					.clone(),
-					..default()
-				},
+				Mesh3d(meshes.portal.clone()),
+				MeshMaterial3d(
+					materials.characters[summoning.portal_color.idx()].clone(),
+				),
 				portal_transform.with_scale(Vec3::ZERO).ease_to(
 					portal_transform.with_scale(Vec3::ONE),
 					EaseFunction::CubicIn,

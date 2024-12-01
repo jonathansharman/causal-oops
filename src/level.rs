@@ -16,6 +16,8 @@ use crate::control::Action;
 /// Marker component for entities that should be despawned when the level is
 /// despawned. Note that level entities are despawned recursively, so it's best
 /// to only add this component to root entities.
+///
+/// TODO: Remove this component in favor of spawning levels as scenes.
 #[derive(Component)]
 pub struct LevelEntity;
 
