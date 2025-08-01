@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 
 use bevy::{
-	input::{keyboard::KeyboardInput, ButtonState},
+	input::{ButtonState, keyboard::KeyboardInput},
+	platform::collections::HashMap,
 	prelude::*,
-	utils::HashMap,
 };
 
 use crate::{
@@ -190,7 +190,7 @@ pub fn control(
 		// return so that the update and animation systems can respond.
 		if let Some(control_event) = control_event {
 			state.next_actor = None;
-			control_events.send(control_event);
+			control_events.write(control_event);
 			return;
 		}
 	}

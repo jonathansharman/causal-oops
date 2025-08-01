@@ -7,8 +7,8 @@ use std::{
 };
 
 use bevy::{
+	platform::collections::{HashMap, HashSet},
 	prelude::*,
-	utils::{HashMap, HashSet},
 };
 
 use crate::control::Action;
@@ -663,7 +663,7 @@ impl Level {
 	/// Computes the list of colors not yet taken by any character. The results
 	/// are deterministic.
 	fn get_available_colors(&self) -> Vec<CharacterColor> {
-		let character_colors = HashSet::from_iter(
+		let character_colors = HashSet::<CharacterColor>::from_iter(
 			self.characters_by_id()
 				.map(|(_, character)| character.color),
 		);

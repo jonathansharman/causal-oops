@@ -35,19 +35,19 @@ pub fn update(
 				if state.queue.len() == level.character_count() {
 					let actions = Vec::from_iter(state.queue.drain(..));
 					let change_event = level.update(actions);
-					change_events.send(change_event);
+					change_events.write(change_event);
 				}
 			}
 			ControlEvent::Undo => {
 				if let Some(change) = level.undo() {
 					state.queue.clear();
-					change_events.send(change);
+					change_events.write(change);
 				}
 			}
 			ControlEvent::Redo => {
 				if let Some(change_event) = level.redo() {
 					state.queue.clear();
-					change_events.send(change_event);
+					change_events.write(change_event);
 				}
 			}
 		}
@@ -56,6 +56,6 @@ pub fn update(
 			.characters_by_id()
 			.nth(state.queue.len())
 			.expect("character out of bounds");
-		next_actors.send(NextActor { id, character });
+		next_actors.write(NextActor { id, character });
 	}
 }

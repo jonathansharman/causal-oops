@@ -61,7 +61,7 @@ pub fn add_indicators(
 	for NextActor { id: actor_id, .. } in next_actors.read() {
 		// Clear any existing choosing indicators.
 		for entity in &choosing_query {
-			commands.entity(entity).despawn_recursive();
+			commands.entity(entity).despawn();
 		}
 		// Spawn a new choosing indicator.
 		let indicator = commands
@@ -129,7 +129,7 @@ pub fn clear_indicators(
 ) {
 	if !change_events.is_empty() {
 		for entity in &choice_query {
-			commands.entity(entity).despawn_recursive();
+			commands.entity(entity).despawn();
 		}
 	}
 }
@@ -313,7 +313,7 @@ pub fn timed_despawn(
 	for (entity, mut timer) in &mut query {
 		timer.tick(time.delta());
 		if timer.finished() {
-			commands.entity(entity).despawn_recursive();
+			commands.entity(entity).despawn();
 		}
 	}
 }

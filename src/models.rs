@@ -1,7 +1,7 @@
 use bevy::{
 	gltf::{Gltf, GltfMesh},
+	platform::collections::HashMap,
 	prelude::*,
-	utils::HashMap,
 };
 
 use crate::states::GameState;

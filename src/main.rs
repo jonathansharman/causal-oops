@@ -1,7 +1,7 @@
 use std::f32::consts::TAU;
 
 use bevy::{
-	input::{keyboard::KeyboardInput, ButtonState},
+	input::{ButtonState, keyboard::KeyboardInput},
 	prelude::*,
 	render::camera::ScalingMode,
 };
@@ -11,7 +11,7 @@ use control::ControlEvent;
 use level::{ChangeEvent, Coords, Level, LevelEntity, Object, Tile};
 use materials::Materials;
 use meshes::Meshes;
-use models::{load_gltf_meshes, Models};
+use models::{Models, load_gltf_meshes};
 use states::GameState;
 use update::NextActor;
 
@@ -55,10 +55,10 @@ fn main() {
 						animation::timed_despawn,
 					),
 					// Allow adding indicators on newly spawned entities.
-					apply_deferred,
+					ApplyDeferred,
 					animation::add_indicators,
 					// Allow indicators to be added/removed in one frame.
-					apply_deferred,
+					ApplyDeferred,
 					animation::clear_indicators,
 					change_level,
 				)
@@ -236,7 +236,7 @@ fn lights_cameras_action(
 
 	// Kick off the control loop by sending the first actor, if there is one.
 	if let Some((&id, &character)) = level.characters_by_id().next() {
-		next_actors.send(NextActor { id, character });
+		next_actors.write(NextActor { id, character });
 	}
 
 	next_state.set(GameState::Playing);
@@ -262,7 +262,7 @@ fn change_level(
 		} {
 			// Despawn any existing level entities.
 			for entity in level_entities.into_iter() {
-				commands.entity(entity).despawn_recursive();
+				commands.entity(entity).despawn();
 			}
 			// Update the level resource and respawn the level.
 			*level = next_level;
