@@ -137,6 +137,7 @@ pub enum Tile {
 		portal_color: Option<CharacterColor>,
 	},
 	Wall,
+	Stairs,
 }
 
 /// An object identifier. Enables correlating object animations across frames.
@@ -896,6 +897,7 @@ impl Debug for Level {
 						}
 					}
 					Tile::Wall => '#',
+					Tile::Stairs => '>',
 				})?;
 				f.write_char(match object {
 					Some(Object::Character(c)) => {
@@ -1088,13 +1090,13 @@ struct BiChange {
 pub fn test_level() -> Level {
 	make_level(
 		r#"# # # # # # # # # 
-		   # . .0. . . . . # 
+		   # . .0. . . . > # 
 		   # . . . . . . . # 
 		   # . . . . . . . # 
 		   # . .X.Y.Z. . . # 
 		   # . .X.Y. . . . # 
 		   # . .X. . . . . # 
-		   # . . . . . . . # 
+		   # . . . . . . > # 
 		   # # # # # # # # # "#,
 	)
 }
@@ -1156,7 +1158,7 @@ fn make_level(map: &str) -> Level {
 	let mut object_coords = Vec::new();
 	for (row, line) in map
 		.lines()
-		.map(|line| line.trim_start())
+		.map(str::trim_start)
 		.filter(|line| !line.is_empty())
 		.enumerate()
 	{
@@ -1166,6 +1168,7 @@ fn make_level(map: &str) -> Level {
 			let (tile, object) = (tile_object[0], tile_object[1]);
 			tiles.push(match tile {
 				b'#' => Tile::Wall,
+				b'>' => Tile::Stairs,
 				_ => Tile::Floor { portal_color: None },
 			});
 			if let Some(object) = match object {

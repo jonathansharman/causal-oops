@@ -15,6 +15,7 @@ pub struct Models {
 	pub wooden_crate: Handle<Scene>,
 	pub steel_crate: Handle<Scene>,
 	pub stone_block: Handle<Scene>,
+	pub stairs: Handle<Scene>,
 
 	pub question_mesh: Handle<Mesh>,
 	pub wait_mesh: Handle<Mesh>,
@@ -55,6 +56,7 @@ impl Models {
 				.load(scene0.from_asset("models/steel-crate.glb")),
 			stone_block: asset_server
 				.load(scene0.from_asset("models/sandstone-block.glb")),
+			stairs: asset_server.load(scene0.from_asset("models/stairs.glb")),
 			// Initialize meshes with default handles, which the
 			// load_gltf_meshes system will replace once Gltf assets load.
 			question_mesh: Handle::default(),

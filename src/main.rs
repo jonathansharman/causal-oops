@@ -109,6 +109,11 @@ fn spawn_level(
 					SceneRoot(models.wall.clone()),
 					tile_coords.transform(0.5),
 				)),
+				Tile::Stairs => commands.spawn((
+					LevelEntity,
+					SceneRoot(models.stairs.clone()),
+					tile_coords.transform(-0.5),
+				)),
 			};
 		}
 	}
