@@ -622,17 +622,17 @@ impl Level {
 			// Block this team if moving it may cause a collision with an
 			// unblocked team. These other teams could become blocked later, so
 			// this algorithm may not always block the fewest possible teams.
-			if let Some(others) = move_move_collisions.get(&team.start) {
-				if others.iter().any(|other| !teams[&other.start].blocked) {
-					block_queue = vec![team];
-				}
+			if let Some(others) = move_move_collisions.get(&team.start)
+				&& others.iter().any(|other| !teams[&other.start].blocked)
+			{
+				block_queue = vec![team];
 			}
 			// Block this team if moving it causes a collision with a blocked
 			// team.
-			if let Some(others) = move_stay_collisions.get(&team.start) {
-				if others.iter().any(|other| teams[&other.start].blocked) {
-					block_queue = vec![team];
-				}
+			if let Some(others) = move_stay_collisions.get(&team.start)
+				&& others.iter().any(|other| teams[&other.start].blocked)
+			{
+				block_queue = vec![team];
 			}
 			// Iteratively block teams as needed.
 			while let Some(team) = block_queue.pop() {
