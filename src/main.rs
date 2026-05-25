@@ -1,14 +1,14 @@
 use std::f32::consts::TAU;
 
 use bevy::{
+	camera::ScalingMode,
 	input::{ButtonState, keyboard::KeyboardInput},
 	prelude::*,
-	render::camera::ScalingMode,
 };
 use bevy_easings::EasingsPlugin;
 
-use control::ControlEvent;
-use level::{ChangeEvent, Coords, Level, LevelEntity, Object, Tile};
+use control::Control;
+use level::{ChangeMessage, Coords, Level, LevelEntity, Object, Tile};
 use materials::Materials;
 use meshes::Meshes;
 use models::{Models, load_gltf_meshes};
@@ -68,9 +68,9 @@ fn main() {
 					.run_if(in_state(GameState::Playing)),
 			),
 		)
-		.add_event::<NextActor>()
-		.add_event::<ControlEvent>()
-		.add_event::<ChangeEvent>()
+		.add_message::<NextActor>()
+		.add_message::<Control>()
+		.add_message::<ChangeMessage>()
 		.insert_resource(ClearColor(Color::BLACK))
 		.insert_resource(level::test_level())
 		.run();
@@ -195,7 +195,7 @@ fn lights_cameras_action(
 	mut commands: Commands,
 	level: Res<Level>,
 	mut ambient_light: ResMut<AmbientLight>,
-	mut next_actors: EventWriter<NextActor>,
+	mut next_actors: MessageWriter<NextActor>,
 	mut next_state: ResMut<NextState<GameState>>,
 ) {
 	// Add a static camera overlooking the level.
@@ -251,16 +251,16 @@ fn lights_cameras_action(
 
 fn change_level(
 	mut commands: Commands,
-	mut keyboard_events: EventReader<KeyboardInput>,
+	mut keyboard_inputs: MessageReader<KeyboardInput>,
 	mut level: ResMut<Level>,
 	mut next_state: ResMut<NextState<GameState>>,
 	level_entities: Query<Entity, With<level::LevelEntity>>,
 ) {
-	for event in keyboard_events.read() {
-		if event.state != ButtonState::Pressed {
+	for input in keyboard_inputs.read() {
+		if input.state != ButtonState::Pressed {
 			continue;
 		}
-		if let Some(next_level) = match event.key_code {
+		if let Some(next_level) = match input.key_code {
 			KeyCode::Digit1 => Some(level::test_level()),
 			KeyCode::Digit2 => Some(level::test_level_short()),
 			KeyCode::Digit3 => Some(level::test_level_thin()),

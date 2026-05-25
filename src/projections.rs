@@ -1,6 +1,6 @@
 use bevy::{
+	camera::{CameraProjection, OrthographicProjection, SubCameraView},
 	math::{Mat4, Vec2, Vec3A},
-	render::camera::{CameraProjection, OrthographicProjection, SubCameraView},
 };
 
 /// An oblique [`CameraProjection`].

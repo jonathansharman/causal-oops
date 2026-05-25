@@ -383,7 +383,7 @@ impl Level {
 	/// Any two summoners must summon into disjoint coordinates. This
 	/// precondition will generally be trivially satisfied since there should be
 	/// at most one summoner per update.
-	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> ChangeEvent {
+	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> ChangeMessage {
 		// Map pushers and summoners to their offsets.
 		let (pushers, summoners, returners) = {
 			let mut pushers = HashMap::new();
@@ -431,7 +431,7 @@ impl Level {
 			reverse,
 		});
 		self.turn += 1;
-		ChangeEvent(change)
+		ChangeMessage(change)
 	}
 
 	/// Computes the set of [`Returning`]s resulting from the given `returners`.
@@ -742,26 +742,26 @@ impl Level {
 	}
 
 	/// If possible, moves to the previous level state and returns the resulting
-	/// [`ChangeEvent`].
-	pub fn undo(&mut self) -> Option<ChangeEvent> {
+	/// [`ChangeMessage`].
+	pub fn undo(&mut self) -> Option<ChangeMessage> {
 		if self.turn > 0 {
 			let change = self.history[self.turn - 1].reverse.clone();
 			self.apply(&change);
 			self.turn -= 1;
-			Some(ChangeEvent(change))
+			Some(ChangeMessage(change))
 		} else {
 			None
 		}
 	}
 
 	/// If possible, moves to the next level state and returns the resulting
-	/// [`ChangeEvent`].
-	pub fn redo(&mut self) -> Option<ChangeEvent> {
+	/// [`ChangeMessage`].
+	pub fn redo(&mut self) -> Option<ChangeMessage> {
 		if self.turn < self.history.len() {
 			let change = self.history[self.turn].forward.clone();
 			self.apply(&change);
 			self.turn += 1;
-			Some(ChangeEvent(change))
+			Some(ChangeMessage(change))
 		} else {
 			None
 		}
@@ -999,10 +999,10 @@ impl Change {
 	}
 }
 
-/// A [`Change`] event. Note that `Change` itself can't be an [`Event`] because
+/// A [`Change`] event. Note that `Change` itself can't be a [`Message`] because
 /// it's not [`Sync`].
-#[derive(Event, Deref)]
-pub struct ChangeEvent(Arc<Change>);
+#[derive(Message, Deref)]
+pub struct ChangeMessage(Arc<Change>);
 
 /// A connected line of pushers and passive objects, for use in the resolution
 /// of simultaneous movement.

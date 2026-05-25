@@ -72,8 +72,8 @@ pub enum Action {
 	Return,
 }
 
-#[derive(Event)]
-pub enum ControlEvent {
+#[derive(Message)]
+pub enum Control {
 	Act((Id, Action)),
 	Undo,
 	Redo,
@@ -92,17 +92,17 @@ pub struct ControlState {
 /// be consumed by the update and animation systems.
 pub fn control(
 	mut state: Local<ControlState>,
-	mut keyboard_events: EventReader<KeyboardInput>,
-	mut next_actors: EventReader<NextActor>,
-	mut control_events: EventWriter<ControlEvent>,
+	mut keyboard_messsages: MessageReader<KeyboardInput>,
+	mut next_actors: MessageReader<NextActor>,
+	mut controls: MessageWriter<Control>,
 ) {
 	// TODO: Make this a resource and support custom input bindings.
 	let keybinds = KeyboardBindings::default();
 	// Buffer inputs so that update and animation systems can run after each
-	// control event.
+	// control message.
 	state
 		.input_buffer
-		.extend(keybinds.adapt(&mut keyboard_events.read()));
+		.extend(keybinds.adapt(&mut keyboard_messsages.read()));
 
 	// Set the next actor if there is one. There should be at most one next
 	// actor per frame.
@@ -114,20 +114,16 @@ pub fn control(
 		return;
 	};
 
-	let act = |action: Action| -> Option<ControlEvent> {
-		Some(ControlEvent::Act((actor.id, action)))
+	let act = |action: Action| -> Option<Control> {
+		Some(Control::Act((actor.id, action)))
 	};
 
-	// Consume buffered input until a control event happens.
+	// Consume buffered input until a control message is received.
 	while let Some((button, button_state)) = state.input_buffer.pop_front() {
-		// Get the next control event and/or update internal state.
-		let control_event = match (button, button_state) {
-			(GameButton::Undo, ButtonState::Pressed) => {
-				Some(ControlEvent::Undo)
-			}
-			(GameButton::Redo, ButtonState::Pressed) => {
-				Some(ControlEvent::Redo)
-			}
+		// Get the next control and/or update internal state.
+		let control = match (button, button_state) {
+			(GameButton::Undo, ButtonState::Pressed) => Some(Control::Undo),
+			(GameButton::Redo, ButtonState::Pressed) => Some(Control::Redo),
 			(GameButton::Up, ButtonState::Pressed) => {
 				if actor.character.can_summon() && state.act_button_held {
 					act(Action::Summon(Offset::UP))
@@ -186,11 +182,11 @@ pub fn control(
 			}
 			_ => None,
 		};
-		// If there was a control event, emit it, reset the next actor, and
+		// If there was a control message, write it, reset the next actor, and
 		// return so that the update and animation systems can respond.
-		if let Some(control_event) = control_event {
+		if let Some(control) = control {
 			state.next_actor = None;
-			control_events.write(control_event);
+			controls.write(control);
 			return;
 		}
 	}

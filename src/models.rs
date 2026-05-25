@@ -70,7 +70,7 @@ impl Models {
 }
 
 pub fn load_gltf_meshes(
-	mut asset_events: EventReader<AssetEvent<Gltf>>,
+	mut asset_events: MessageReader<AssetEvent<Gltf>>,
 	mut models: ResMut<Models>,
 	mut gltf_assets: ResMut<Assets<Gltf>>,
 	gltf_mesh_assets: Res<Assets<GltfMesh>>,

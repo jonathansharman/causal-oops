@@ -1,14 +1,14 @@
 use std::time::Duration;
 
 use bevy::{
-	pbr::{NotShadowCaster, NotShadowReceiver},
+	light::{NotShadowCaster, NotShadowReceiver},
 	prelude::*,
 };
 use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
-	control::{Action, ControlEvent},
-	level::{ChangeEvent, Coords, Id, LevelEntity},
+	control::{Action, Control},
+	level::{ChangeMessage, Coords, Id, LevelEntity},
 	materials::Materials,
 	meshes::Meshes,
 	models::Models,
@@ -50,8 +50,8 @@ pub fn add_indicators(
 	mut commands: Commands,
 	models: Res<Models>,
 	materials: Res<Materials>,
-	mut next_actors: EventReader<NextActor>,
-	mut control_events: EventReader<ControlEvent>,
+	mut next_actors: MessageReader<NextActor>,
+	mut controls: MessageReader<Control>,
 	object_query: Query<(Entity, &Object, &Transform)>,
 	choosing_query: Query<Entity, With<ChoosingIndicator>>,
 ) {
@@ -85,8 +85,8 @@ pub fn add_indicators(
 	}
 
 	// Pending actions
-	for control_event in control_events.read() {
-		let ControlEvent::Act((actor_id, action)) = control_event else {
+	for control in controls.read() {
+		let Control::Act((actor_id, action)) = control else {
 			continue;
 		};
 		// Get the mesh and transform for the pending action indicator.
@@ -124,10 +124,10 @@ pub fn add_indicators(
 /// Remove indicators between turns.
 pub fn clear_indicators(
 	mut commands: Commands,
-	change_events: EventReader<ChangeEvent>,
+	changes: MessageReader<ChangeMessage>,
 	choice_query: Query<Entity, With<ChoiceIndicator>>,
 ) {
-	if !change_events.is_empty() {
+	if !changes.is_empty() {
 		for entity in &choice_query {
 			commands.entity(entity).despawn();
 		}
@@ -138,11 +138,11 @@ const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
 pub fn animate_returnings(
 	mut commands: Commands,
-	mut change_events: EventReader<ChangeEvent>,
+	mut changes: MessageReader<ChangeMessage>,
 	object_query: Query<(Entity, &Object)>,
 	portal_query: Query<(Entity, &Portal)>,
 ) {
-	for change in change_events.read() {
+	for change in changes.read() {
 		for returning in change.returnings.values() {
 			let returner_transform = returning.returner.coords.transform(0.5);
 			let portal_transform = returning
@@ -187,11 +187,11 @@ pub fn animate_returnings(
 
 pub fn animate_moves(
 	mut commands: Commands,
-	mut change_events: EventReader<ChangeEvent>,
+	mut changes: MessageReader<ChangeMessage>,
 	object_query: Query<(Entity, &Children, &Transform, &Object)>,
 	body_query: Query<(Entity, &Transform), With<ObjectBody>>,
 ) {
-	for change in change_events.read() {
+	for change in changes.read() {
 		for (parent, children, from, object) in &object_query {
 			let Some(mv) = change.moves.get(&object.id) else {
 				continue;
@@ -226,11 +226,11 @@ pub fn animate_moves(
 
 pub fn animate_summonings(
 	mut commands: Commands,
-	mut change_events: EventReader<ChangeEvent>,
+	mut changes: MessageReader<ChangeMessage>,
 	meshes: Res<Meshes>,
 	materials: Res<Materials>,
 ) {
-	for change in change_events.read() {
+	for change in changes.read() {
 		for summoning in change.summonings.values() {
 			let summon_transform = summoning.summon.coords.transform(0.5);
 			let portal_transform = summoning
@@ -312,7 +312,7 @@ pub fn timed_despawn(
 ) {
 	for (entity, mut timer) in &mut query {
 		timer.tick(time.delta());
-		if timer.finished() {
+		if timer.is_finished() {
 			commands.entity(entity).despawn();
 		}
 	}

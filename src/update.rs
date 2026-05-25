@@ -1,12 +1,12 @@
 use bevy::prelude::*;
 
 use crate::{
-	control::{Action, ControlEvent},
-	level::{ChangeEvent, Character, Id, Level},
+	control::{Action, Control},
+	level::{ChangeMessage, Character, Id, Level},
 };
 
 /// The next character to act.
-#[derive(Event, Clone, Copy)]
+#[derive(Message, Clone, Copy)]
 pub struct NextActor {
 	pub id: Id,
 	pub character: Character,
@@ -23,31 +23,31 @@ pub struct UpdateState {
 pub fn update(
 	mut state: Local<UpdateState>,
 	mut level: ResMut<Level>,
-	mut control_events: EventReader<ControlEvent>,
-	mut next_actors: EventWriter<NextActor>,
-	mut change_events: EventWriter<ChangeEvent>,
+	mut controls: MessageReader<Control>,
+	mut next_actors: MessageWriter<NextActor>,
+	mut changes: MessageWriter<ChangeMessage>,
 ) {
-	for control_event in control_events.read() {
-		match control_event {
-			ControlEvent::Act(character_action) => {
+	for control in controls.read() {
+		match control {
+			Control::Act(character_action) => {
 				state.queue.push(*character_action);
 				// If all characters have queued actions, execute the turn.
 				if state.queue.len() == level.character_count() {
 					let actions = Vec::from_iter(state.queue.drain(..));
 					let change_event = level.update(actions);
-					change_events.write(change_event);
+					changes.write(change_event);
 				}
 			}
-			ControlEvent::Undo => {
+			Control::Undo => {
 				if let Some(change) = level.undo() {
 					state.queue.clear();
-					change_events.write(change);
+					changes.write(change);
 				}
 			}
-			ControlEvent::Redo => {
-				if let Some(change_event) = level.redo() {
+			Control::Redo => {
+				if let Some(change) = level.redo() {
 					state.queue.clear();
-					change_events.write(change_event);
+					changes.write(change);
 				}
 			}
 		}
