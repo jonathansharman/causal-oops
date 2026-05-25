@@ -12,6 +12,7 @@ use level::{ChangeEvent, Coords, Level, LevelEntity, Object, Tile};
 use materials::Materials;
 use meshes::Meshes;
 use models::{Models, load_gltf_meshes};
+use projections::ObliqueProjection;
 use states::GameState;
 use update::NextActor;
 
@@ -21,6 +22,7 @@ mod level;
 mod materials;
 mod meshes;
 mod models;
+mod projections;
 mod states;
 mod update;
 
@@ -197,25 +199,30 @@ fn lights_cameras_action(
 	mut next_state: ResMut<NextState<GameState>>,
 ) {
 	// Add a static camera overlooking the level.
-	let offset = Vec3::new(-0.5, 0.5, 1.0);
-	let level_size =
-		Vec3::new(level.width() as f32, level.height() as f32, 0.0);
-	let target = offset + 0.5 * Vec3::new(level_size.x, -level_size.y, 0.0);
+	let level_size = Vec2::new(level.width() as f32, level.height() as f32);
+	let offset = Vec2::new(-0.5, 0.5);
+	let center = offset + 0.5 * Vec2::new(level_size.x, -level_size.y);
+	// The height of the layer where the camera's skew should be zero.
+	let focus = 1.0;
+	// The distance from the focal point to the camera. The camera must be
+	// placed high enough to avoid clipping into indicators, etc.
+	let focal_distance = 1.0;
+	let obliqueness = 0.6;
 	commands.spawn((
 		LevelEntity,
 		Camera3d::default(),
-		Transform::from_translation(Vec3::new(
-			target.x,
-			-level_size.y,
-			level_size.x.max(level_size.y),
-		))
-		.looking_at(target, Vec3::Z),
-		Projection::Orthographic(OrthographicProjection {
-			scaling_mode: ScalingMode::AutoMin {
-				min_width: level_size.x,
-				min_height: level_size.y,
+		Transform::from_translation(center.extend(focus + focal_distance))
+			.looking_at(center.extend(0.0), Vec3::Y),
+		Projection::custom(ObliqueProjection {
+			focal_distance,
+			obliqueness: Vec2::new(-obliqueness, obliqueness),
+			orthographic: OrthographicProjection {
+				scaling_mode: ScalingMode::AutoMin {
+					min_width: level_size.x,
+					min_height: level_size.y,
+				},
+				..OrthographicProjection::default_3d()
 			},
-			..OrthographicProjection::default_3d()
 		}),
 	));
 
