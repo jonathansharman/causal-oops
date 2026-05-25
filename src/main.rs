@@ -194,7 +194,7 @@ fn spawn_level(
 fn lights_cameras_action(
 	mut commands: Commands,
 	level: Res<Level>,
-	mut ambient_light: ResMut<AmbientLight>,
+	mut ambient_light: ResMut<GlobalAmbientLight>,
 	mut next_actors: MessageWriter<NextActor>,
 	mut next_state: ResMut<NextState<GameState>>,
 ) {
