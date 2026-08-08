@@ -103,17 +103,17 @@ fn spawn_level(
 				// Assume a fresh level has no open portals.
 				Tile::Floor { .. } => commands.spawn((
 					LevelEntity,
-					SceneRoot(models.floor.clone()),
+					WorldAssetRoot(models.floor.clone()),
 					tile_coords.transform(-0.5),
 				)),
 				Tile::Wall => commands.spawn((
 					LevelEntity,
-					SceneRoot(models.wall.clone()),
+					WorldAssetRoot(models.wall.clone()),
 					tile_coords.transform(0.5),
 				)),
 				Tile::Stairs => commands.spawn((
 					LevelEntity,
-					SceneRoot(models.stairs.clone()),
+					WorldAssetRoot(models.stairs.clone()),
 					tile_coords.transform(-0.5),
 				)),
 			};
@@ -154,7 +154,7 @@ fn spawn_level(
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						SceneRoot(models.wooden_crate.clone()),
+						WorldAssetRoot(models.wooden_crate.clone()),
 					));
 				}),
 			Object::SteelCrate => commands
@@ -169,7 +169,7 @@ fn spawn_level(
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						SceneRoot(models.steel_crate.clone()),
+						WorldAssetRoot(models.steel_crate.clone()),
 					));
 				}),
 			Object::StoneBlock => commands
@@ -184,7 +184,7 @@ fn spawn_level(
 				.with_children(|child_builder| {
 					child_builder.spawn((
 						animation::ObjectBody,
-						SceneRoot(models.stone_block.clone()),
+						WorldAssetRoot(models.stone_block.clone()),
 					));
 				}),
 		};
@@ -232,7 +232,7 @@ fn lights_cameras_action(
 		LevelEntity,
 		DirectionalLight {
 			illuminance: 0.3 * light_consts::lux::AMBIENT_DAYLIGHT,
-			shadows_enabled: true,
+			shadow_maps_enabled: true,
 			..default()
 		},
 		Transform::from_rotation(Quat::from_axis_angle(

@@ -10,12 +10,12 @@ type GetMeshMut = fn(&mut Models) -> &mut Handle<Mesh>;
 
 #[derive(Resource)]
 pub struct Models {
-	pub wall: Handle<Scene>,
-	pub floor: Handle<Scene>,
-	pub wooden_crate: Handle<Scene>,
-	pub steel_crate: Handle<Scene>,
-	pub stone_block: Handle<Scene>,
-	pub stairs: Handle<Scene>,
+	pub wall: Handle<WorldAsset>,
+	pub floor: Handle<WorldAsset>,
+	pub wooden_crate: Handle<WorldAsset>,
+	pub steel_crate: Handle<WorldAsset>,
+	pub stone_block: Handle<WorldAsset>,
+	pub stairs: Handle<WorldAsset>,
 
 	pub question_mesh: Handle<Mesh>,
 	pub wait_mesh: Handle<Mesh>,
