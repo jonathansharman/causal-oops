@@ -8,7 +8,9 @@ use bevy_easings::{Ease, EaseFunction, EasingType};
 
 use crate::{
 	control::{Action, Control},
-	level::{ChangeMessage, Coords, Id, LevelEntity},
+	level::{
+		ChangeMessage, Coords, Descent, Id, LevelEntity, Returning, Summoning,
+	},
 	materials::Materials,
 	meshes::Meshes,
 	models::Models,
@@ -58,7 +60,7 @@ pub fn add_indicators(
 	let transform = Transform::from_translation(0.5 * Vec3::Z);
 
 	// Next actor
-	for NextActor { id: actor_id, .. } in next_actors.read() {
+	for NextActor { actor } in next_actors.read() {
 		// Clear any existing choosing indicators.
 		for entity in &choosing_query {
 			commands.entity(entity).despawn();
@@ -78,9 +80,9 @@ pub fn add_indicators(
 		let actor = object_query
 			.iter()
 			.find_map(|(entity, object, _)| {
-				(object.id == *actor_id).then_some(entity)
+				(object.id == actor.id).then_some(entity)
 			})
-			.unwrap();
+			.expect("next actor entity not found");
 		commands.entity(actor).add_child(indicator);
 	}
 
@@ -98,6 +100,7 @@ pub fn add_indicators(
 			),
 			Action::Summon(_offset) => (models.summon_mesh.clone(), transform),
 			Action::Return => (models.return_mesh.clone(), transform),
+			Action::Descend => (models.descend_mesh.clone(), transform),
 		};
 		// Spawn the indicator.
 		let indicator = commands
@@ -116,7 +119,7 @@ pub fn add_indicators(
 			.find_map(|(entity, object, _)| {
 				(object.id == *actor_id).then_some(entity)
 			})
-			.unwrap();
+			.expect("pending actor entity not found");
 		commands.entity(actor).add_child(indicator);
 	}
 }
@@ -136,6 +139,70 @@ pub fn clear_indicators(
 
 const ANIMATION_DURATION: Duration = Duration::from_millis(200);
 
+pub fn animate_descent(
+	mut commands: Commands,
+	mut changes: MessageReader<ChangeMessage>,
+	object_query: Query<(Entity, &Object)>,
+	meshes: Res<Meshes>,
+	materials: Res<Materials>,
+) {
+	for change in changes.read() {
+		if let Some(Descent { descender, reverse }) = change.descent {
+			let above = descender.coords.transform(0.5);
+			let below = above.with_translation(above.translation - Vec3::Z);
+			for (entity, object) in &object_query {
+				if object.id == descender.id {
+					if reverse {
+						// Respawn un-descending character.
+						commands
+							.spawn((
+								LevelEntity,
+								Object {
+									id: descender.id,
+									rotates: true,
+								},
+								below.with_scale(Vec3::ZERO).ease_to(
+									above,
+									EaseFunction::CubicIn,
+									EasingType::Once {
+										duration: ANIMATION_DURATION,
+									},
+								),
+							))
+							.with_children(|child_builder| {
+								child_builder.spawn((
+									ObjectBody,
+									Mesh3d(meshes.character.clone()),
+									MeshMaterial3d(
+										materials.characters
+											[descender.character.color.idx()]
+										.clone(),
+									),
+									Transform::from_rotation(
+										Quat::from_rotation_y(descender.angle),
+									),
+								));
+							});
+					} else {
+						// Despawn descending character.
+						commands.entity(entity).insert((
+							DespawnTimer::from_duration(ANIMATION_DURATION),
+							above.ease_to(
+								below,
+								EaseFunction::CubicIn,
+								EasingType::Once {
+									duration: ANIMATION_DURATION,
+								},
+							),
+						));
+					}
+					break;
+				}
+			}
+		}
+	}
+}
+
 pub fn animate_returnings(
 	mut commands: Commands,
 	mut changes: MessageReader<ChangeMessage>,
@@ -143,18 +210,17 @@ pub fn animate_returnings(
 	portal_query: Query<(Entity, &Portal)>,
 ) {
 	for change in changes.read() {
-		for returning in change.returnings.values() {
-			let returner_transform = returning.returner.coords.transform(0.5);
-			let portal_transform = returning
-				.returner
+		for Returning { returner, .. } in change.returnings.values() {
+			let returner_transform = returner.coords.transform(0.5);
+			let portal_transform = returner
 				.coords
 				.transform(0.5 * crate::meshes::PORTAL_HEIGHT);
 			// Despawn returning character.
 			for (entity, object) in &object_query {
-				if object.id == returning.returner.id {
+				if object.id == returner.id {
 					commands.entity(entity).insert((
 						DespawnTimer::from_duration(ANIMATION_DURATION),
-						returner_transform.with_scale(Vec3::ONE).ease_to(
+						returner_transform.ease_to(
 							returner_transform.with_scale(Vec3::ZERO),
 							EaseFunction::CubicIn,
 							EasingType::Once {
@@ -167,10 +233,10 @@ pub fn animate_returnings(
 			}
 			// Despawn closed portal.
 			for (entity, portal) in &portal_query {
-				if portal.coords == returning.returner.coords {
+				if portal.coords == returner.coords {
 					commands.entity(entity).insert((
 						DespawnTimer::from_duration(ANIMATION_DURATION),
-						portal_transform.with_scale(Vec3::ONE).ease_to(
+						portal_transform.ease_to(
 							portal_transform.with_scale(Vec3::ZERO),
 							EaseFunction::CubicIn,
 							EasingType::Once {
@@ -231,22 +297,25 @@ pub fn animate_summonings(
 	materials: Res<Materials>,
 ) {
 	for change in changes.read() {
-		for summoning in change.summonings.values() {
-			let summon_transform = summoning.summon.coords.transform(0.5);
-			let portal_transform = summoning
-				.summon
-				.coords
-				.transform(0.5 * crate::meshes::PORTAL_HEIGHT);
+		for Summoning {
+			summon,
+			portal_color,
+			..
+		} in change.summonings.values()
+		{
+			let summon_transform = summon.coords.transform(0.5);
+			let portal_transform =
+				summon.coords.transform(0.5 * crate::meshes::PORTAL_HEIGHT);
 			// Spawn summoned character.
 			commands
 				.spawn((
 					LevelEntity,
 					Object {
-						id: summoning.summon.id,
+						id: summon.id,
 						rotates: true,
 					},
 					summon_transform.with_scale(Vec3::ZERO).ease_to(
-						summon_transform.with_scale(Vec3::ONE),
+						summon_transform,
 						EaseFunction::CubicIn,
 						EasingType::Once {
 							duration: ANIMATION_DURATION,
@@ -258,12 +327,11 @@ pub fn animate_summonings(
 						ObjectBody,
 						Mesh3d(meshes.character.clone()),
 						MeshMaterial3d(
-							materials.characters
-								[summoning.summon.character.color.idx()]
-							.clone(),
+							materials.characters[summon.character.color.idx()]
+								.clone(),
 						),
 						Transform::from_rotation(Quat::from_rotation_y(
-							summoning.summon.angle,
+							summon.angle,
 						)),
 					));
 				});
@@ -271,16 +339,16 @@ pub fn animate_summonings(
 			commands.spawn((
 				LevelEntity,
 				Portal {
-					coords: summoning.summon.coords,
+					coords: summon.coords,
 				},
 				NotShadowCaster,
 				NotShadowReceiver,
 				Mesh3d(meshes.portal.clone()),
 				MeshMaterial3d(
-					materials.characters[summoning.portal_color.idx()].clone(),
+					materials.characters[portal_color.idx()].clone(),
 				),
 				portal_transform.with_scale(Vec3::ZERO).ease_to(
-					portal_transform.with_scale(Vec3::ONE),
+					portal_transform,
 					EaseFunction::CubicIn,
 					EasingType::Once {
 						duration: ANIMATION_DURATION,

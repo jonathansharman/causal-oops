@@ -2,14 +2,13 @@ use bevy::prelude::*;
 
 use crate::{
 	control::{Action, Control},
-	level::{ChangeMessage, Character, Id, Level},
+	level::{ChangeMessage, Id, Level, LevelCharacter},
 };
 
 /// The next character to act.
 #[derive(Message, Clone, Copy)]
 pub struct NextActor {
-	pub id: Id,
-	pub character: Character,
+	pub actor: LevelCharacter,
 }
 
 /// Local state for the update system, to store queued actions.
@@ -52,10 +51,10 @@ pub fn update(
 			}
 		}
 		// Send the next actor to the control and animation systems.
-		let (&id, &character) = level
-			.characters_by_id()
+		let actor = level
+			.characters()
 			.nth(state.queue.len())
 			.expect("character out of bounds");
-		next_actors.write(NextActor { id, character });
+		next_actors.write(NextActor { actor });
 	}
 }

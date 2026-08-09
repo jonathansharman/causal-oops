@@ -7,7 +7,7 @@ use bevy::{
 };
 
 use crate::{
-	level::{Id, Offset},
+	level::{Id, Level, Offset},
 	update::NextActor,
 };
 
@@ -70,6 +70,7 @@ pub enum Action {
 	Push(Offset),
 	Summon(Offset),
 	Return,
+	Descend,
 }
 
 #[derive(Message)]
@@ -85,12 +86,15 @@ pub enum Control {
 pub struct ControlState {
 	input_buffer: VecDeque<(GameButton, ButtonState)>,
 	next_actor: Option<NextActor>,
-	act_button_held: bool,
+	// The act button is multipurpose. This tracks whether the act button has
+	// been pressed but not yet released or handled.
+	modifier: bool,
 }
 
 /// Consumes keyboard/gamepad input and produces higher-level control events to
 /// be consumed by the update and animation systems.
 pub fn control(
+	level: Res<Level>,
 	mut state: Local<ControlState>,
 	mut keyboard_messsages: MessageReader<KeyboardInput>,
 	mut next_actors: MessageReader<NextActor>,
@@ -106,11 +110,11 @@ pub fn control(
 
 	// Set the next actor if there is one. There should be at most one next
 	// actor per frame.
-	if let Some(next_actor) = next_actors.read().last() {
+	if let Some(next_actor) = next_actors.read().next() {
 		state.next_actor = Some(*next_actor);
 	}
 	// Get the next actor or return if there's no actor to control.
-	let Some(actor) = state.next_actor else {
+	let Some(NextActor { actor }) = state.next_actor else {
 		return;
 	};
 
@@ -120,65 +124,47 @@ pub fn control(
 
 	// Consume buffered input until a control message is received.
 	while let Some((button, button_state)) = state.input_buffer.pop_front() {
+		let mut go = |offset: Offset| {
+			let modifier = state.modifier;
+			state.modifier = false;
+			if actor.can_summon() && modifier {
+				act(Action::Summon(offset))
+			} else if actor.can_push() {
+				act(Action::Push(offset))
+			} else {
+				None
+			}
+		};
+
 		// Get the next control and/or update internal state.
 		let control = match (button, button_state) {
 			(GameButton::Undo, ButtonState::Pressed) => Some(Control::Undo),
 			(GameButton::Redo, ButtonState::Pressed) => Some(Control::Redo),
-			(GameButton::Up, ButtonState::Pressed) => {
-				if actor.character.can_summon() && state.act_button_held {
-					act(Action::Summon(Offset::UP))
-				} else if actor.character.can_push() {
-					act(Action::Push(Offset::UP))
-				} else {
-					None
-				}
-			}
-			(GameButton::Left, ButtonState::Pressed) => {
-				if actor.character.can_summon() && state.act_button_held {
-					act(Action::Summon(Offset::LEFT))
-				} else if actor.character.can_push() {
-					act(Action::Push(Offset::LEFT))
-				} else {
-					None
-				}
-			}
-			(GameButton::Down, ButtonState::Pressed) => {
-				if actor.character.can_summon() && state.act_button_held {
-					act(Action::Summon(Offset::DOWN))
-				} else if actor.character.can_push() {
-					act(Action::Push(Offset::DOWN))
-				} else {
-					None
-				}
-			}
-			(GameButton::Right, ButtonState::Pressed) => {
-				if actor.character.can_summon() && state.act_button_held {
-					act(Action::Summon(Offset::RIGHT))
-				} else if actor.character.can_push() {
-					act(Action::Push(Offset::RIGHT))
-				} else {
-					None
-				}
-			}
+			(GameButton::Up, ButtonState::Pressed) => go(Offset::UP),
+			(GameButton::Left, ButtonState::Pressed) => go(Offset::LEFT),
+			(GameButton::Down, ButtonState::Pressed) => go(Offset::DOWN),
+			(GameButton::Right, ButtonState::Pressed) => go(Offset::RIGHT),
 			(GameButton::Wait, ButtonState::Pressed) => act(Action::Wait),
 			(GameButton::Act, ButtonState::Pressed) => {
-				// The Act button is contextual. If the actor has the ability to
-				// return, it's the return button. If it has the ability to
-				// summon, it's a modifier button.
-				if !state.act_button_held {
-					state.act_button_held = true;
-					actor
-						.character
-						.can_return()
-						.then(|| act(Action::Return))
-						.flatten()
-				} else {
-					None
-				}
+				// We don't know yet whether the act button will be used to
+				// summon, return, or descend (or do nothing).
+				state.modifier = true;
+				None
 			}
 			(GameButton::Act, ButtonState::Released) => {
-				state.act_button_held = false;
-				None
+				if state.modifier {
+					state.modifier = false;
+					if actor.can_return() {
+						act(Action::Return)
+					} else if actor.can_descend(&level) {
+						act(Action::Descend)
+					} else {
+						None
+					}
+				} else {
+					// The act button press already modified a direction.
+					None
+				}
 			}
 			_ => None,
 		};

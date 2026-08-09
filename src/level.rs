@@ -208,20 +208,6 @@ pub struct Character {
 	pub portal_coords: Option<Coords>,
 }
 
-impl Character {
-	pub fn can_push(&self) -> bool {
-		!self.sliding
-	}
-
-	pub fn can_summon(&self) -> bool {
-		self.portal_coords.is_none()
-	}
-
-	pub fn can_return(&self) -> bool {
-		self.portal_coords.is_some()
-	}
-}
-
 /// Something that can be moved around a level.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Object {
@@ -263,12 +249,33 @@ impl From<&LevelCharacter> for LevelObject {
 
 /// A [`Character`] along with data relating that character to a [`Level`]. (See
 /// also [`LevelObject`].)
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct LevelCharacter {
 	pub id: Id,
 	pub character: Character,
 	pub coords: Coords,
 	pub angle: f32,
+}
+
+impl LevelCharacter {
+	pub fn can_push(&self) -> bool {
+		!self.character.sliding
+	}
+
+	pub fn can_summon(&self) -> bool {
+		self.character.portal_coords.is_none()
+	}
+
+	pub fn can_return(&self) -> bool {
+		self.character.portal_coords == Some(self.coords)
+	}
+
+	pub fn can_descend(&self, level: &Level) -> bool {
+		// It's never correct for a character with an open portal to descend
+		// (the level would be soft locked), so we might as well not allow it.
+		self.character.portal_coords.is_none()
+			&& level.tile_at(self.coords) == Tile::Stairs
+	}
 }
 
 /// The complete state of a level at a single point in time.
@@ -341,19 +348,9 @@ impl Level {
 		}
 	}
 
-	/// A reference to the character with the given `id`. Panics if there is no
-	/// character with that ID.
-	pub fn character_by_id(&self, id: &Id) -> &Character {
-		let Object::Character(character) = &self.objects_by_id[id].object
-		else {
-			panic!("character not found");
-		};
-		character
-	}
-
 	/// A mutable reference to the character with the given `id`. Panics if
 	/// there is no character with that ID.
-	pub fn character_by_id_mut(&mut self, id: &Id) -> &mut Character {
+	fn character_by_id_mut(&mut self, id: &Id) -> &mut Character {
 		let Object::Character(character) =
 			&mut self.objects_by_id.get_mut(id).unwrap().object
 		else {
@@ -362,11 +359,11 @@ impl Level {
 		character
 	}
 
-	/// Characters in the level, with their IDs.
-	pub fn characters_by_id(&self) -> impl Iterator<Item = (&Id, &Character)> {
+	/// Characters in the level.
+	pub fn characters(&self) -> impl Iterator<Item = LevelCharacter> {
 		self.character_ids
 			.iter()
-			.map(|id| (id, self.character_by_id(id)))
+			.map(|id| self.level_character_by_id(id))
 	}
 
 	/// Number of characters in the level.
@@ -377,20 +374,23 @@ impl Level {
 	/// Updates the level by making the `actors` act, returning the resulting
 	/// (possibly trivial) [`Change`].
 	///
-	/// Actions are resolved in three phases: (1) return, (2) push, and (3)
-	/// summon. Actions within each phase are simultaneous.
+	/// Actions are resolved in three phases: (1) descend/return, (2) push, and
+	/// (3) summon. Actions within each phase are simultaneous.
 	///
 	/// Any two summoners must summon into disjoint coordinates. This
 	/// precondition will generally be trivially satisfied since there should be
 	/// at most one summoner per update.
 	pub fn update(&mut self, actors: Vec<(Id, Action)>) -> ChangeMessage {
-		// Map pushers and summoners to their offsets.
-		let (pushers, summoners, returners) = {
+		// Collect the various kinds of actors into per-action data structures
+		// to facilitate application of their updates.
+		let (pushers, summoners, returners, descender) = {
 			let mut pushers = HashMap::new();
 			let mut summoners = HashMap::new();
 			let mut returners = HashSet::new();
+			let mut descender = None;
 			for (id, action) in actors {
 				match action {
+					Action::Wait => {}
 					Action::Push(offset) => {
 						pushers.insert(id, offset);
 					}
@@ -400,11 +400,17 @@ impl Level {
 					Action::Return => {
 						returners.insert(id);
 					}
-					Action::Wait => {}
+					Action::Descend => descender = Some(id),
 				}
 			}
-			(pushers, summoners, returners)
+			(pushers, summoners, returners, descender)
 		};
+
+		let descent = descender.map(|id| Descent {
+			descender: self.level_character_by_id(&id),
+			reverse: false,
+		});
+		self.apply_descent(descent);
 
 		let returnings = self.get_returnings(returners);
 		self.apply_returnings(&returnings);
@@ -417,6 +423,7 @@ impl Level {
 
 		// Add the change to the turn history and then return it.
 		let change = Change {
+			descent,
 			returnings,
 			moves,
 			summonings,
@@ -664,8 +671,7 @@ impl Level {
 	/// are deterministic.
 	fn get_available_colors(&self) -> Vec<CharacterColor> {
 		let character_colors = HashSet::<CharacterColor>::from_iter(
-			self.characters_by_id()
-				.map(|(_, character)| character.color),
+			self.characters().map(|character| character.character.color),
 		);
 		(0..CharacterColor::COUNT)
 			.filter_map(|idx| {
@@ -769,9 +775,21 @@ impl Level {
 
 	/// Applies `change` to the level's state without affecting history.
 	fn apply(&mut self, change: &Change) {
+		self.apply_descent(change.descent);
 		self.apply_returnings(&change.returnings);
 		self.apply_moves(&change.moves);
 		self.apply_summonings(&change.summonings);
+	}
+
+	/// Applies `descent` to the level's state without affecting history.
+	fn apply_descent(&mut self, descent: Option<Descent>) {
+		if let Some(Descent { descender, reverse }) = descent {
+			if reverse {
+				self.spawn((&descender).into());
+			} else {
+				self.remove_at(descender.coords);
+			}
+		}
 	}
 
 	/// Applies `returnings` to the level's state without affecting history.
@@ -932,6 +950,13 @@ impl Returning {
 	}
 }
 
+/// A character's descent to the next level.
+#[derive(Clone, Copy)]
+pub struct Descent {
+	pub descender: LevelCharacter,
+	pub reverse: bool,
+}
+
 /// A movement of an object from one tile to another.
 #[derive(Clone, Copy)]
 pub struct Move {
@@ -972,6 +997,7 @@ impl Summoning {
 /// A change from one [`Level`] state to another.
 #[derive(Clone)]
 pub struct Change {
+	pub descent: Option<Descent>,
 	pub returnings: HashMap<Id, Returning>,
 	pub moves: HashMap<Id, Move>,
 	pub summonings: HashMap<Id, Summoning>,
@@ -980,6 +1006,10 @@ pub struct Change {
 impl Change {
 	fn reverse(self) -> Change {
 		Change {
+			descent: self.descent.map(|descent| Descent {
+				reverse: !descent.reverse,
+				..descent
+			}),
 			returnings: self
 				.summonings
 				.into_iter()

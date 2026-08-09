@@ -51,6 +51,7 @@ fn main() {
 					control::control,
 					update::update,
 					(
+						animation::animate_descent,
 						animation::animate_returnings,
 						animation::animate_moves,
 						animation::animate_summonings,
@@ -242,8 +243,8 @@ fn lights_cameras_action(
 	));
 
 	// Kick off the control loop by sending the first actor, if there is one.
-	if let Some((&id, &character)) = level.characters_by_id().next() {
-		next_actors.write(NextActor { id, character });
+	if let Some(character) = level.characters().next() {
+		next_actors.write(NextActor { actor: character });
 	}
 
 	next_state.set(GameState::Playing);
