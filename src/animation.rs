@@ -150,41 +150,41 @@ pub fn animate_descent(
 		if let Some(Descent { descender, reverse }) = change.descent {
 			let above = descender.coords.transform(0.5);
 			let below = above.with_translation(above.translation - Vec3::Z);
-			for (entity, object) in &object_query {
-				if object.id == descender.id {
-					if reverse {
-						// Respawn un-descending character.
-						commands
-							.spawn((
-								LevelEntity,
-								Object {
-									id: descender.id,
-									rotates: true,
-								},
-								below.with_scale(Vec3::ZERO).ease_to(
-									above,
-									EaseFunction::CubicIn,
-									EasingType::Once {
-										duration: ANIMATION_DURATION,
-									},
-								),
-							))
-							.with_children(|child_builder| {
-								child_builder.spawn((
-									ObjectBody,
-									Mesh3d(meshes.character.clone()),
-									MeshMaterial3d(
-										materials.characters
-											[descender.character.color.idx()]
-										.clone(),
-									),
-									Transform::from_rotation(
-										Quat::from_rotation_y(descender.angle),
-									),
-								));
-							});
-					} else {
-						// Despawn descending character.
+			if reverse {
+				// Respawn un-descending character.
+				commands
+					.spawn((
+						LevelEntity,
+						Object {
+							id: descender.id,
+							rotates: true,
+						},
+						below.with_scale(Vec3::ZERO).ease_to(
+							above,
+							EaseFunction::CubicIn,
+							EasingType::Once {
+								duration: ANIMATION_DURATION,
+							},
+						),
+					))
+					.with_children(|child_builder| {
+						child_builder.spawn((
+							ObjectBody,
+							Mesh3d(meshes.character.clone()),
+							MeshMaterial3d(
+								materials.characters
+									[descender.character.color.idx()]
+								.clone(),
+							),
+							Transform::from_rotation(Quat::from_rotation_y(
+								descender.angle,
+							)),
+						));
+					});
+			} else {
+				// Despawn descending character.
+				for (entity, object) in &object_query {
+					if object.id == descender.id {
 						commands.entity(entity).insert((
 							DespawnTimer::from_duration(ANIMATION_DURATION),
 							above.ease_to(
@@ -195,8 +195,8 @@ pub fn animate_descent(
 								},
 							),
 						));
+						break;
 					}
-					break;
 				}
 			}
 		}
