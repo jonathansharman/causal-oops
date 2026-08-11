@@ -50,11 +50,9 @@ pub fn update(
 				}
 			}
 		}
-		// Send the next actor to the control and animation systems.
-		let actor = level
-			.characters()
-			.nth(state.queue.len())
-			.expect("character out of bounds");
-		next_actors.write(NextActor { actor });
+		// Send the next actor, if any, to the control and animation systems.
+		if let Some(actor) = level.characters().nth(state.queue.len()) {
+			next_actors.write(NextActor { actor });
+		}
 	}
 }
