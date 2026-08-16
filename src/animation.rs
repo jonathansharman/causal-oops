@@ -176,7 +176,7 @@ pub fn animate_descent(
 									[descender.character.color.idx()]
 								.clone(),
 							),
-							Transform::from_rotation(Quat::from_rotation_y(
+							Transform::from_rotation(Quat::from_rotation_z(
 								descender.angle,
 							)),
 						));
@@ -330,7 +330,7 @@ pub fn animate_summonings(
 							materials.characters[summon.character.color.idx()]
 								.clone(),
 						),
-						Transform::from_rotation(Quat::from_rotation_y(
+						Transform::from_rotation(Quat::from_rotation_z(
 							summon.angle,
 						)),
 					));
