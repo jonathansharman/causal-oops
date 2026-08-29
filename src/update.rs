@@ -9,6 +9,8 @@ use crate::{
 #[derive(Message, Clone, Copy)]
 pub struct NextActor {
 	pub actor: LevelCharacter,
+	/// Whether this is currently the only actor.
+	pub only: bool,
 }
 
 /// Local state for the update system, to store queued actions.
@@ -52,7 +54,10 @@ pub fn update(
 		}
 		// Send the next actor, if any, to the control and animation systems.
 		if let Some(actor) = level.characters().nth(state.queue.len()) {
-			next_actors.write(NextActor { actor });
+			next_actors.write(NextActor {
+				actor,
+				only: level.character_count() == 1,
+			});
 		}
 	}
 }

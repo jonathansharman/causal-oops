@@ -60,10 +60,14 @@ pub fn add_indicators(
 	let transform = Transform::from_translation(0.5 * Vec3::Z);
 
 	// Next actor
-	for NextActor { actor } in next_actors.read() {
+	for NextActor { actor, only } in next_actors.read() {
 		// Clear any existing choosing indicators.
 		for entity in &choosing_query {
 			commands.entity(entity).despawn();
+		}
+		// If this is the only actor, there's no need to show an indicator.
+		if *only {
+			continue;
 		}
 		// Spawn a new choosing indicator.
 		let indicator = commands

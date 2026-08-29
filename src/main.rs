@@ -244,7 +244,10 @@ fn lights_cameras_action(
 
 	// Kick off the control loop by sending the first actor, if there is one.
 	if let Some(character) = level.characters().next() {
-		next_actors.write(NextActor { actor: character });
+		next_actors.write(NextActor {
+			actor: character,
+			only: level.character_count() == 1,
+		});
 	}
 
 	next_state.set(GameState::Playing);

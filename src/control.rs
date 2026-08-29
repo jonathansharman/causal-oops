@@ -114,7 +114,7 @@ pub fn control(
 		state.next_actor = Some(*next_actor);
 	}
 	// Get the next actor or return if there's no actor to control.
-	let Some(NextActor { actor }) = state.next_actor else {
+	let Some(NextActor { actor, .. }) = state.next_actor else {
 		return;
 	};
 
