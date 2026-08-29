@@ -159,6 +159,7 @@ pub fn animate_descent(
 							id: descender.id,
 							rotates: true,
 						},
+						below.with_scale(Vec3::ZERO),
 						below.with_scale(Vec3::ZERO).ease_to(
 							above,
 							EaseFunction::CubicIn,
@@ -314,6 +315,7 @@ pub fn animate_summonings(
 						id: summon.id,
 						rotates: true,
 					},
+					summon_transform.with_scale(Vec3::ZERO),
 					summon_transform.with_scale(Vec3::ZERO).ease_to(
 						summon_transform,
 						EaseFunction::CubicIn,
@@ -347,6 +349,7 @@ pub fn animate_summonings(
 				MeshMaterial3d(
 					materials.characters[portal_color.idx()].clone(),
 				),
+				portal_transform.with_scale(Vec3::ZERO),
 				portal_transform.with_scale(Vec3::ZERO).ease_to(
 					portal_transform,
 					EaseFunction::CubicIn,
